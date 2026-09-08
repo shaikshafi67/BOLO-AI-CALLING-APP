@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/mock_data.dart';
+import '../../services/auth_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // TODO(Phase 4): replace mockCurrentUser with the real profile fetched
+    // from the backend, keyed by AuthService().currentUser!.uid.
     final user = mockCurrentUser;
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
@@ -18,7 +21,7 @@ class ProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Center(child: Text(user.name, style: Theme.of(context).textTheme.titleLarge)),
-          Center(child: Text(user.email, style: Theme.of(context).textTheme.bodyMedium)),
+          Center(child: Text(AuthService().currentUser?.email ?? user.email, style: Theme.of(context).textTheme.bodyMedium)),
           const SizedBox(height: 24),
           const Divider(),
           ListTile(
@@ -38,9 +41,9 @@ class ProfileScreen extends StatelessWidget {
           ListTile(
             leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
             title: Text('Log out', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            onTap: () {
-              // TODO(Phase 3): call Firebase Authentication signOut.
-              context.go('/login');
+            onTap: () async {
+              await AuthService().signOut();
+              if (context.mounted) context.go('/login');
             },
           ),
         ],

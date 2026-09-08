@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
+import '../../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -10,12 +11,14 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final _authService = AuthService();
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   String _preferredLanguage = supportedLanguages.first.code;
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -27,15 +30,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-    // TODO(Phase 3): call Firebase Authentication createUserWithEmailAndPassword,
-    // then create the user profile row in the backend (name, preferredLanguage).
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    context.go('/home');
+    try {
+      final user = await _authService.register(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      await user?.updateDisplayName(_nameController.text.trim());
+      // TODO(Phase 4): create the user profile row in the backend
+      // (name, preferredLanguage: $_preferredLanguage) via POST /api/users.
+      if (!mounted) return;
+      context.go('/home');
+    } on AuthFailure catch (e) {
+      setState(() => _errorMessage = e.message);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -50,6 +64,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (_errorMessage != null) ...[
+                  Text(_errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  const SizedBox(height: 12),
+                ],
                 TextFormField(
                   controller: _nameController,
                   decoration: const InputDecoration(labelText: 'Full name', border: OutlineInputBorder()),

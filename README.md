@@ -19,7 +19,7 @@ Phase 1 — project scaffolding complete. Auth, calling, and AI pipeline are not
 | Signaling | Socket.IO on Node.js/TypeScript |
 | Backend | Node.js + TypeScript (Express) |
 | Database | PostgreSQL |
-| Auth | Firebase Authentication |
+| Auth | Firebase Authentication (project `bolo-ai-8f1a0`) |
 | ASR | Google Cloud Speech-to-Text (streaming) |
 | Translation | Google Cloud Translation API |
 | TTS | Google Cloud Text-to-Speech |
@@ -67,11 +67,12 @@ cd backend && npm test
 cd frontend && flutter test
 ```
 
-## Known Limitations (Phase 1)
+## Known Limitations
 
-- No authentication, calling, or AI pipeline implemented yet — this is scaffolding only.
-- Android build has a Gradle/Java version compatibility warning from `flutter create`; not yet resolved (only matters when building an APK).
+- Calling and the AI pipeline are not implemented yet (Phases 5–6).
+- Contacts, call history, and user profile are still mock data pending backend integration (Phase 4).
 - TURN server not yet selected/configured — required before cross-network calls will work in later phases.
+- `firebase_core_web` is pinned to 3.10.0 via `dependency_overrides` in `frontend/pubspec.yaml` — 3.11.0 fails to compile for web (a dart2js `isA`/`JSObject` regression). Remove the override once upstream ships a fix.
 
 ## Roadmap
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -8,10 +9,12 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _authService = AuthService();
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   bool _isLoading = false;
   bool _sent = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -21,16 +24,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
-
-    // TODO(Phase 3): call Firebase Authentication sendPasswordResetEmail.
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    if (!mounted) return;
     setState(() {
-      _isLoading = false;
-      _sent = true;
+      _isLoading = true;
+      _errorMessage = null;
     });
+
+    try {
+      await _authService.sendPasswordResetEmail(_emailController.text.trim());
+      if (!mounted) return;
+      setState(() => _sent = true);
+    } on AuthFailure catch (e) {
+      setState(() => _errorMessage = e.message);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -63,6 +70,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                       const SizedBox(height: 20),
+                      if (_errorMessage != null) ...[
+                        Text(_errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                        const SizedBox(height: 12),
+                      ],
                       TextFormField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,

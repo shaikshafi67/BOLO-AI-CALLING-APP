@@ -1,9 +1,12 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  /// Overridable for widget tests, which don't initialize Firebase.
+  final bool Function()? isSignedInOverride;
+
+  const SplashScreen({super.key, this.isSignedInOverride});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -13,11 +16,15 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // TODO(Phase 3): check Firebase auth state here instead of a fixed delay,
-    // and route to /home directly if the user already has a valid session.
-    Timer(const Duration(milliseconds: 1200), () {
-      if (mounted) context.go('/onboarding');
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAuthState());
+  }
+
+  Future<void> _checkAuthState() async {
+    // Small delay so the splash branding is visible even on a fast auth check.
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    final isSignedIn = widget.isSignedInOverride?.call() ?? AuthService().currentUser != null;
+    context.go(isSignedIn ? '/home' : '/onboarding');
   }
 
   @override

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "607547037853",
+    "project_id": "bolo-ai-8f1a0",
+    "storage_bucket": "bolo-ai-8f1a0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:607547037853:android:d05675624b111575805c74",
+        "android_client_info": {
+          "package_name": "com.boloai.boloai_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDoJ2t_PnvoLz3p1Ls7MouZYSbReOVS6Rw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

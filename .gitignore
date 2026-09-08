@@ -23,6 +23,7 @@ frontend/.pub-cache/
 frontend/.pub/
 frontend/android/local.properties
 frontend/android/key.properties
+frontend/android/build/
 frontend/**/GeneratedPluginRegistrant.*
 frontend/ios/Flutter/flutter_export_environment.sh
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -9,6 +10,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _authService = AuthService();
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -30,12 +32,15 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
 
-    // TODO(Phase 3): call Firebase Authentication signInWithEmailAndPassword.
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    context.go('/home');
+    try {
+      await _authService.signIn(email: _emailController.text.trim(), password: _passwordController.text);
+      if (!mounted) return;
+      context.go('/home');
+    } on AuthFailure catch (e) {
+      setState(() => _errorMessage = e.message);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
