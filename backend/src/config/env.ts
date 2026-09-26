@@ -22,4 +22,14 @@ export const env = {
   get googleApplicationCredentials() {
     return required('GOOGLE_APPLICATION_CREDENTIALS');
   },
+  get firebaseProjectId() {
+    return required('FIREBASE_PROJECT_ID');
+  },
+  get firebaseClientEmail() {
+    return required('FIREBASE_CLIENT_EMAIL');
+  },
+  get firebasePrivateKey() {
+    // .env stores the key with literal \n sequences; convert to real newlines.
+    return required('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n');
+  },
 };

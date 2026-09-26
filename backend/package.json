@@ -10,6 +10,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "migrate": "ts-node --transpile-only scripts/migrate.ts",
     "test": "jest"
   },
   "keywords": [],
@@ -36,8 +37,10 @@
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.5.0",
+    "@types/pg": "^8.23.1",
     "jest": "^30.5.1",
     "ts-jest": "^29.4.12",
+    "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
   }

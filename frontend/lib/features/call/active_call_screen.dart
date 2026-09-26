@@ -20,7 +20,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   bool _cameraOn = true;
   bool _speakerOn = true;
   bool _translationOn = true;
-  String _sourceLanguage = 'en';
+  final String _sourceLanguage = 'en';
   late String _targetLanguage;
   String _caption = '';
   Timer? _captionTimer;
