@@ -1,0 +1,176 @@
+@import 'tailwindcss';
+
+/* Class-based dark mode: ThemeContext toggles `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * BoloAI design tokens.
+ * Semantic colors are CSS variables so light/dark mode swap in one place.
+ * Use them as Tailwind utilities: bg-canvas, bg-surface, text-fg, text-muted, border-line …
+ */
+@theme inline {
+  --font-sans: 'DM Sans', 'Noto Sans Devanagari', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  /* Editorial serif for marketing headlines only (landing, auth). */
+  --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+
+  /* Ink blue: the one brand color. No purple, no gradients. */
+  --color-brand-50: #eef2fc;
+  --color-brand-100: #dce4f8;
+  --color-brand-200: #b8c7f0;
+  --color-brand-300: #8ea4e3;
+  --color-brand-400: #6380d3;
+  --color-brand-500: #3f5fc2;
+  --color-brand-600: #2b49a8;
+  --color-brand-700: #1f3595;
+  --color-brand-800: #1b2c74;
+  --color-brand-900: #16235a;
+
+  /* Marigold accent, used sparingly for highlights. */
+  --color-accent-100: #fdf0d5;
+  --color-accent-300: #f6c66b;
+  --color-accent-400: #f0ad3a;
+  --color-accent-500: #e8950f;
+  --color-accent-600: #c27a08;
+
+  --shadow-soft: 0 1px 2px rgb(28 25 23 / 0.05), 0 2px 8px -2px rgb(28 25 23 / 0.06);
+  --shadow-lift: 0 2px 4px rgb(28 25 23 / 0.05), 0 18px 36px -16px rgb(28 25 23 / 0.22);
+
+  --animate-fade-in: fade-in 0.35s ease-out both;
+  --animate-fade-up: fade-up 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-scale-in: scale-in 0.2s ease-out both;
+  --animate-slide-in-right: slide-in-right 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-slide-up: slide-up 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-pulse-ring: pulse-ring 1.8s ease-out infinite;
+  --animate-wave: wave 1.1s ease-in-out infinite;
+  --animate-marquee: marquee 40s linear infinite;
+}
+
+/* Warm paper tones in light mode, warm charcoal in dark mode. */
+:root {
+  --canvas: #f8f5ef;
+  --surface: #fffdf9;
+  --surface-2: #f1ece3;
+  --line: #e6dfd3;
+  --fg: #1c1917;
+  --muted: #57534e;
+  --subtle: #8a837a;
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #141311;
+  --surface: #1c1b18;
+  --surface-2: #26241f;
+  --line: #34312b;
+  --fg: #f3efe8;
+  --muted: #b3aca1;
+  --subtle: #7d766c;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-canvas text-fg font-sans;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tight;
+  }
+  /* Video posters/photos should never flash white in dark mode. */
+  video, img {
+    @apply bg-surface-2;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+  ::selection {
+    @apply bg-brand-500/20;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-soft;
+  }
+  /* Hand-drawn style marker underline for one or two key words. */
+  .marker {
+    background-image: linear-gradient(transparent 62%, var(--color-accent-300) 62%, var(--color-accent-300) 92%, transparent 92%);
+    padding: 0 0.08em;
+    margin: 0 -0.08em;
+  }
+  .dark .marker {
+    background-image: linear-gradient(transparent 62%, rgb(232 149 15 / 0.45) 62%, rgb(232 149 15 / 0.45) 92%, transparent 92%);
+  }
+  .font-serif-display {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  /* Solid brand fill (kept as a class so every brand surface changes in one place). */
+  .gradient-brand {
+    @apply bg-brand-700;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

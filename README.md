@@ -29,9 +29,22 @@ Phase 1 — project scaffolding complete. Auth, calling, and AI pipeline are not
 ```
 BoloAI/
 ├── frontend/   Flutter app (lib/core, config, models, services, repositories, features, widgets)
+├── web/        React + TypeScript + Vite web app (see web/README.md)
 ├── backend/    Node.js + TypeScript API/signaling server (src/controllers, services, models, routes, middleware, websocket, config)
 ├── docs/       Requirements, architecture, API docs
 ```
+
+## Web App (React)
+
+`web/` is the full web frontend prototype: landing page, auth, dashboard, start/join call, the video call screen with live translation panel and captions, history, contacts, profile, settings and notifications, with light/dark mode. It runs on mock data today; services in `web/src/services/` are the integration points for the backend.
+
+```bash
+cd web
+npm install
+npm run dev    # http://localhost:5173
+```
+
+Details: [web/README.md](web/README.md)
 
 ## Prerequisites
 
