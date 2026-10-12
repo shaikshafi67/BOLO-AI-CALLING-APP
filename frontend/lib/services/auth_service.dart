@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'device_session.dart';
 
 /// Thin wrapper around FirebaseAuth so the rest of the app depends on this
 /// interface, not directly on the Firebase SDK. Translates FirebaseAuthException
@@ -20,18 +21,23 @@ class AuthService {
       if (kIsWeb) {
         await _auth.setPersistence(remember ? Persistence.LOCAL : Persistence.SESSION);
       }
+      // This device claims the account, signing out any other device.
+      DeviceSession.instance.expectFreshSignIn();
       final credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
       return credential.user;
     } on FirebaseAuthException catch (e) {
+      DeviceSession.instance.cancelFreshSignIn();
       throw AuthFailure(_messageFor(e));
     }
   }
 
   Future<User?> register({required String email, required String password}) async {
     try {
+      DeviceSession.instance.expectFreshSignIn();
       final credential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
       return credential.user;
     } on FirebaseAuthException catch (e) {
+      DeviceSession.instance.cancelFreshSignIn();
       throw AuthFailure(_messageFor(e));
     }
   }

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
+import '../../services/session.dart';
 import '../../widgets/common.dart';
 import 'auth_layout.dart';
 
@@ -22,6 +23,13 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _remember = true;
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    // e.g. "Your account was signed in on another device…"
+    _errorMessage = Session.instance.takeSignOutNotice();
+  }
 
   @override
   void dispose() {

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../core/app_state.dart';
 import '../models/user.dart';
 import 'auth_service.dart';
+import 'device_session.dart';
 
 /// Offline demo mode for presentations and screenshots:
 ///   flutter run --dart-define=BOLOAI_DEMO=true
@@ -24,6 +25,9 @@ class Session extends ChangeNotifier {
   AppUser? get user => _user;
   bool get isSignedIn => _user != null;
 
+  /// Why the user was signed out, shown once on the login screen.
+  final ValueNotifier<String?> signOutNotice = ValueNotifier(null);
+
   StreamSubscription<User?>? _sub;
 
   void start() {
@@ -34,10 +38,28 @@ class Session extends ChangeNotifier {
     _sub?.cancel();
     final auth = AuthService();
     _user = _fromFirebase(auth.currentUser);
+
+    // One signed-in device per account: signing in elsewhere signs this one out.
+    DeviceSession.instance.onRevoked = () {
+      signOutNotice.value = 'Your account was signed in on another device, so you were signed out here.';
+      AuthService().signOut();
+    };
     _sub = auth.authStateChanges().listen((u) {
+      if (u == null) {
+        DeviceSession.instance.stop();
+      } else {
+        DeviceSession.instance.start(u);
+      }
       _user = _fromFirebase(u);
       notifyListeners();
     });
+  }
+
+  /// Returns the sign-out notice and clears it.
+  String? takeSignOutNotice() {
+    final notice = signOutNotice.value;
+    signOutNotice.value = null;
+    return notice;
   }
 
   /// Re-read the Firebase user (e.g. after setting the display name).
@@ -68,6 +90,7 @@ class Session extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    await DeviceSession.instance.release();
     await AuthService().signOut();
   }
 
