@@ -3,14 +3,23 @@ import cors from 'cors';
 import { healthRouter } from './routes/health.routes';
 import { userRouter } from './routes/user.routes';
 import { callRouter } from './routes/call.routes';
+import { createSessionRouter } from './routes/session.routes';
+import { requireAuth } from './middleware/auth.middleware';
+import { pgSessionStore } from './services/session.service';
 
-export function createApp() {
+export interface AppOptions {
+  /// Called when an account signs in on a new device, to sign its other devices out.
+  onSessionClaimed?: (uid: string, sessionId: string) => void;
+}
+
+export function createApp(options: AppOptions = {}) {
   const app = express();
 
   app.use(cors());
   app.use(express.json());
 
   app.use('/api/health', healthRouter);
+  app.use('/api/sessions', createSessionRouter(pgSessionStore, requireAuth, options.onSessionClaimed ?? (() => undefined)));
   app.use('/api/users', userRouter);
   app.use('/api/calls', callRouter);
 

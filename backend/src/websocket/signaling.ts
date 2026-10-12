@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { isSupportedLanguageCode } from '../config/supportedLanguages';
 import { Participant, ROOM_CODE_PATTERN, RoomManager } from './roomManager';
+import { SessionStore, sessionStatus } from '../sessions/sessionStore';
 
 /// Identity extracted from a verified Firebase ID token.
 export interface VerifiedUser {
@@ -25,29 +26,61 @@ type Ack = (response: Record<string, unknown>) => void;
 /// See docs/signaling.md for the event reference.
 export function attachSignaling(
   httpServer: HttpServer,
-  options: { verifyToken: TokenVerifier; rooms?: RoomManager; corsOrigin?: string | string[] },
+  options: {
+    verifyToken: TokenVerifier;
+    /// When set, sockets must also present the device's active session id
+    /// (one signed-in device per account, see docs/sessions.md).
+    sessions?: SessionStore;
+    rooms?: RoomManager;
+    corsOrigin?: string | string[];
+  },
 ) {
   const verifyToken = options.verifyToken;
   const rooms = options.rooms ?? new RoomManager();
 
   const io = new Server(httpServer, { cors: { origin: options.corsOrigin ?? '*' } });
 
-  // Every socket must present a valid Firebase ID token:
-  //   io(url, { auth: { token: await user.getIdToken() } })
+  // Every socket must present a valid Firebase ID token and, when sessions
+  // are enforced, the session id this device claimed after signing in:
+  //   io(url, { auth: { token: await user.getIdToken(), sessionId } })
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
     if (typeof token !== 'string' || token.length === 0) return next(new Error('unauthorized'));
+    let user: VerifiedUser;
     try {
-      socket.data.user = await verifyToken(token);
-      next();
+      user = await verifyToken(token);
     } catch {
-      next(new Error('unauthorized'));
+      return next(new Error('unauthorized'));
     }
+    socket.data.user = user;
+
+    if (options.sessions) {
+      const sessionId = socket.handshake.auth?.sessionId;
+      if (typeof sessionId !== 'string' || sessionId.length === 0) return next(new Error('session_required'));
+      const status = await sessionStatus(options.sessions, user.uid, sessionId).catch(() => null);
+      if (status === null) return next(new Error('server_error'));
+      // session_replaced: sign this device out. session_inactive: claim again.
+      if (status !== 'active') return next(new Error(`session_${status}`));
+      socket.data.sessionId = sessionId;
+    }
+    next();
   });
+
+  /// Signs the account out everywhere except [keepSessionId]: those devices
+  /// receive `session:revoked` and are disconnected (leaving any call).
+  async function kickOtherSessions(uid: string, keepSessionId: string) {
+    const sockets = await io.in(userRoom(uid)).fetchSockets();
+    for (const s of sockets) {
+      if (s.data.sessionId === keepSessionId) continue;
+      s.emit('session:revoked', { reason: 'signed_in_elsewhere' });
+      s.disconnect(true);
+    }
+  }
 
   io.on('connection', (socket: Socket) => {
     const user = socket.data.user as VerifiedUser;
     const displayName = user.name ?? user.email?.split('@')[0] ?? 'BoloAI user';
+    socket.join(userRoom(user.uid));
 
     const publicView = (p: Participant) => ({ uid: p.uid, name: p.name, language: p.language });
 
@@ -115,5 +148,9 @@ export function attachSignaling(
     socket.on('disconnect', leave);
   });
 
-  return { io, rooms };
+  return { io, rooms, kickOtherSessions };
 }
+
+/// Socket.IO room holding every socket of one account (never a call room,
+/// whose codes look like BOLO-1234).
+const userRoom = (uid: string) => `user:${uid}`;
