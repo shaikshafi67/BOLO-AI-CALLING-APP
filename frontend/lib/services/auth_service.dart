@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Thin wrapper around FirebaseAuth so the rest of the app depends on this
 /// interface, not directly on the Firebase SDK. Translates FirebaseAuthException
@@ -12,8 +13,13 @@ class AuthService {
 
   Stream<User?> authStateChanges() => _auth.authStateChanges();
 
-  Future<User?> signIn({required String email, required String password}) async {
+  Future<User?> signIn({required String email, required String password, bool remember = true}) async {
     try {
+      // Web only: "Remember me" off keeps the session for this tab only.
+      // Mobile/desktop always persist the session securely on the device.
+      if (kIsWeb) {
+        await _auth.setPersistence(remember ? Persistence.LOCAL : Persistence.SESSION);
+      }
       final credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
       return credential.user;
     } on FirebaseAuthException catch (e) {
@@ -38,6 +44,15 @@ class AuthService {
       await _auth.sendPasswordResetEmail(email: email);
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') return;
+      throw AuthFailure(_messageFor(e));
+    }
+  }
+
+  Future<void> updateDisplayName(String name) async {
+    try {
+      await _auth.currentUser?.updateDisplayName(name);
+      await _auth.currentUser?.reload();
+    } on FirebaseAuthException catch (e) {
       throw AuthFailure(_messageFor(e));
     }
   }

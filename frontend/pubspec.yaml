@@ -37,6 +37,8 @@ dependencies:
   go_router: ^17.2.3
   firebase_core: ^4.14.0
   firebase_auth: ^6.6.1
+  shared_preferences: ^2.5.5
+  video_player: ^2.10.1
 
 dev_dependencies:
   flutter_test:
@@ -96,3 +98,24 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+  # Stock photos/video (Mixkit free license, see assets/media/CREDITS.md).
+  assets:
+    - assets/media/
+
+  # Bundled so the app works offline and looks the same on every platform.
+  fonts:
+    - family: DMSans
+      fonts:
+        - asset: assets/fonts/DMSans-400.ttf
+        - asset: assets/fonts/DMSans-500.ttf
+          weight: 500
+        - asset: assets/fonts/DMSans-600.ttf
+          weight: 600
+        - asset: assets/fonts/DMSans-700.ttf
+          weight: 700
+    - family: InstrumentSerif
+      fonts:
+        - asset: assets/fonts/InstrumentSerif-400.ttf
+        - asset: assets/fonts/InstrumentSerif-400Italic.ttf
+          style: italic

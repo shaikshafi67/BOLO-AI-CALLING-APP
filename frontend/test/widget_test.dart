@@ -22,7 +22,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('BoloAI'), findsOneWidget);
-    expect(find.text('Your Voice, Any Language.'), findsOneWidget);
+    expect(find.text('Speak your language. We’ll translate the rest.'), findsOneWidget);
 
     // Let the splash screen's auth-check delay elapse and the router rebuild.
     await tester.pump(const Duration(milliseconds: 700));

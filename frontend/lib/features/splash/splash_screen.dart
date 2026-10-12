@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../services/auth_service.dart';
+import '../../core/app_state.dart';
+import '../../core/theme.dart';
+import '../../services/session.dart';
+import '../../widgets/brand.dart';
+
+const onboardedKey = 'boloai.onboarded';
 
 class SplashScreen extends StatefulWidget {
   /// Overridable for widget tests, which don't initialize Firebase.
@@ -16,15 +21,16 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAuthState());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _route());
   }
 
-  Future<void> _checkAuthState() async {
-    // Small delay so the splash branding is visible even on a fast auth check.
+  Future<void> _route() async {
+    // Short pause so the brand is visible even when the auth check is instant.
     await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
-    final isSignedIn = widget.isSignedInOverride?.call() ?? AuthService().currentUser != null;
-    context.go(isSignedIn ? '/home' : '/onboarding');
+    final signedIn = widget.isSignedInOverride?.call() ?? Session.instance.isSignedIn;
+    final onboarded = AppState.instance.prefs?.getBool(onboardedKey) ?? false;
+    context.go(signedIn ? '/home' : (onboarded ? '/login' : '/onboarding'));
   }
 
   @override
@@ -32,13 +38,13 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       body: Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.translate, size: 72, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            Text('BoloAI', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 4),
-            Text('Your Voice, Any Language.', style: Theme.of(context).textTheme.bodyMedium),
+            const LogoMark(size: 72),
+            const SizedBox(height: 18),
+            Text('BoloAI', style: AppTheme.serif(44, color: context.colors.fg)),
+            const SizedBox(height: 6),
+            Text('Speak your language. We’ll translate the rest.', style: TextStyle(color: context.colors.muted)),
           ],
         ),
       ),
