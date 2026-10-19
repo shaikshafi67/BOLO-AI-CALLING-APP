@@ -62,7 +62,9 @@ describe('signaling server', () => {
 
     const joinedNotice = next(shafi, 'peer:joined');
     const joined = await emit(marcus, 'room:join', { roomCode: created.roomCode.toLowerCase(), language: 'en' });
-    expect(joined).toEqual({ ok: true, roomCode: created.roomCode, peers: [{ uid: 'u1', name: 'Shafi', language: 'hi' }] });
+    expect(joined).toMatchObject({ ok: true, roomCode: created.roomCode, peers: [{ uid: 'u1', name: 'Shafi', language: 'hi' }] });
+    expect(joined.iceServers).toEqual(created.iceServers);
+    expect(created.iceServers.length).toBeGreaterThan(0);
     expect(await joinedNotice).toEqual({ uid: 'u2', name: 'Marcus', language: 'en' });
 
     // Offer goes to Marcus, answer comes back to Shafi.

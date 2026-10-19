@@ -30,13 +30,15 @@ All of these take an acknowledgement callback that receives `{ ok: true, ... }` 
 
 | Event | Payload | Success reply |
 |---|---|---|
-| `room:create` | `{ language }` | `{ ok, roomCode, peers: [] }` |
-| `room:join` | `{ roomCode, language }` | `{ ok, roomCode, peers: [{ uid, name, language }] }` |
+| `room:create` | `{ language }` | `{ ok, roomCode, peers: [], iceServers }` |
+| `room:join` | `{ roomCode, language }` | `{ ok, roomCode, peers: [{ uid, name, language }], iceServers }` |
 | `signal` | `{ type: 'offer' \| 'answer' \| 'ice-candidate', data }` | `{ ok }` |
 | `language:update` | `{ language }` | `{ ok }` |
 | `room:leave` | — | `{ ok }` |
 
 - `language` must be a supported code: `en`, `hi`, `te`, `ta`.
+- `iceServers` is the STUN/TURN list to pass to `createPeerConnection` (public STUN, plus
+  the TURN server from `backend/.env` when set), so TURN credentials never ship in the app.
 - `roomCode` uses the format `BOLO-1234` (lower case is accepted).
 - `data` for `signal` is whatever flutter_webrtc produces: the SDP description for
   offers/answers, the candidate map for ICE candidates.
@@ -69,8 +71,28 @@ Possible errors: `invalid_language`, `invalid_room_code`, `not_found`, `full`
 
 - Rooms live in memory and disappear when both people leave. Call records are
   saved separately through `POST /api/calls`.
-- For calls between different networks (e.g. mobile data ↔ Wi-Fi) the apps will
-  also need a TURN server; its details go in `TURN_SERVER_URL`, `TURN_USERNAME`
-  and `TURN_PASSWORD` in `backend/.env`.
-- Tests: `backend/tests/signaling.test.ts` and `backend/tests/roomManager.test.ts`
-  (`npm test`).
+- For calls between different networks (e.g. mobile data ↔ Wi-Fi) the apps also
+  need a TURN server; its details go in `TURN_SERVER_URL` (comma-separate several
+  URLs), `TURN_USERNAME` and `TURN_PASSWORD` in `backend/.env`. Without one, calls
+  work on the same network and behind most home routers, but not across strict NATs.
+- Tests: `backend/tests/signaling.test.ts`, `backend/tests/roomManager.test.ts` and
+  `backend/tests/iceServers.test.ts` (`npm test`).
+
+## The Flutter client
+
+`frontend/lib/services/call_service.dart` implements this flow:
+
+- `CallService.start` / `CallService.join` open the camera and mic, connect a socket
+  for the call (Firebase token + device session id) and create or join the room.
+- Whoever is already in the room sends the offer when `peer:joined` arrives, so both
+  sides never offer at once. If the other person leaves and someone rejoins, the
+  same rule starts a fresh negotiation.
+- ICE candidates that arrive before the remote description are queued.
+- A failed ICE connection triggers an ICE restart from the offerer. If the signaling
+  socket drops, the app rejoins the room on reconnect.
+
+To try it, run the backend and open the app on two devices (or two browser profiles,
+since one account can be signed in on only one device): one taps **Start Call**, the
+other enters the room code under **Join Call**. Browsers only allow the camera on
+`https://` or `localhost`, so a phone's browser cannot use the dev server over the LAN;
+use the Android app with `--dart-define=BOLOAI_API_URL=http://<PC IP>:4000` instead.

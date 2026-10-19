@@ -3,6 +3,7 @@ import { Server, Socket } from 'socket.io';
 import { isSupportedLanguageCode } from '../config/supportedLanguages';
 import { Participant, ROOM_CODE_PATTERN, RoomManager } from './roomManager';
 import { SessionStore, sessionStatus } from '../sessions/sessionStore';
+import { IceServer, iceServersFromEnv } from './iceServers';
 
 /// Identity extracted from a verified Firebase ID token.
 export interface VerifiedUser {
@@ -32,11 +33,14 @@ export function attachSignaling(
     /// (one signed-in device per account, see docs/sessions.md).
     sessions?: SessionStore;
     rooms?: RoomManager;
+    /// STUN/TURN servers sent with room:create / room:join replies.
+    iceServers?: IceServer[];
     corsOrigin?: string | string[];
   },
 ) {
   const verifyToken = options.verifyToken;
   const rooms = options.rooms ?? new RoomManager();
+  const iceServers = options.iceServers ?? iceServersFromEnv();
 
   const io = new Server(httpServer, { cors: { origin: options.corsOrigin ?? '*' } });
 
@@ -89,7 +93,7 @@ export function attachSignaling(
       if (!result.ok) return ack({ ok: false, error: result.error });
       socket.join(roomCode);
       socket.to(roomCode).emit('peer:joined', { uid: user.uid, name: displayName, language });
-      ack({ ok: true, roomCode, peers: result.peers.map(publicView) });
+      ack({ ok: true, roomCode, peers: result.peers.map(publicView), iceServers });
     };
 
     // Create a new room and join it as the first participant.
