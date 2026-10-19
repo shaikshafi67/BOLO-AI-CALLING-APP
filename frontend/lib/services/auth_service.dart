@@ -31,6 +31,29 @@ class AuthService {
     }
   }
 
+  /// Google sign-in: a popup on web, the browser-based Google flow on Android/iOS.
+  /// Returns null when the user closes the Google window without choosing.
+  /// Needs the Google provider enabled in Firebase Console → Authentication.
+  Future<User?> signInWithGoogle({bool remember = true}) async {
+    final provider = GoogleAuthProvider()..setCustomParameters({'prompt': 'select_account'});
+    try {
+      if (kIsWeb) {
+        await _auth.setPersistence(remember ? Persistence.LOCAL : Persistence.SESSION);
+      }
+      DeviceSession.instance.expectFreshSignIn();
+      final credential = kIsWeb ? await _auth.signInWithPopup(provider) : await _auth.signInWithProvider(provider);
+      return credential.user;
+    } on FirebaseAuthException catch (e) {
+      DeviceSession.instance.cancelFreshSignIn();
+      const cancelled = {'popup-closed-by-user', 'cancelled-popup-request', 'web-context-canceled', 'web-context-cancelled'};
+      if (cancelled.contains(e.code)) return null;
+      throw AuthFailure(_messageFor(e));
+    } on UnimplementedError {
+      DeviceSession.instance.cancelFreshSignIn();
+      throw AuthFailure('Google sign-in works in the Android app and on the web. Use email here.');
+    }
+  }
+
   Future<User?> register({required String email, required String password}) async {
     try {
       DeviceSession.instance.expectFreshSignIn();
@@ -81,6 +104,14 @@ class AuthService {
         return 'Choose a stronger password (at least 6 characters).';
       case 'network-request-failed':
         return 'Network error. Check your connection and try again.';
+      case 'operation-not-allowed':
+        return 'Google sign-in isn’t switched on for BoloAI yet. Use email and password for now.';
+      case 'account-exists-with-different-credential':
+        return 'This email already has a BoloAI password. Log in with your email and password.';
+      case 'popup-blocked':
+        return 'Your browser blocked the Google window. Allow pop-ups for this site and try again.';
+      case 'unauthorized-domain':
+        return 'Google sign-in isn’t allowed on this web address. Add it under Authorized domains in Firebase.';
       case 'too-many-requests':
         return 'Too many attempts. Please wait a moment and try again.';
       default:

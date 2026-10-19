@@ -4,7 +4,6 @@ import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/session.dart';
-import '../../widgets/common.dart';
 import 'auth_layout.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -56,6 +55,30 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  bool _googleLoading = false;
+
+  Future<void> _google() async {
+    setState(() {
+      _isLoading = true;
+      _googleLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final user = await _authService.signInWithGoogle(remember: _remember);
+      if (user == null || !mounted) return;
+      context.go('/home');
+    } on AuthFailure catch (e) {
+      if (mounted) setState(() => _errorMessage = e.message);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _googleLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AuthLayout(
@@ -68,8 +91,10 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               OutlinedButton.icon(
-                onPressed: () => showToast(context, 'Google sign-in will be available once it’s enabled in Firebase. Use email for now.'),
-                icon: const Text('G', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF4285F4))),
+                onPressed: _isLoading ? null : _google,
+                icon: _googleLoading
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('G', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF4285F4))),
                 label: const Text('Continue with Google'),
               ),
               const SizedBox(height: 18),
