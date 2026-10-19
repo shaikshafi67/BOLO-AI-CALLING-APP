@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
+import '../../core/app_state.dart';
+import '../../core/formatters.dart';
 import '../../core/mock_data.dart';
 import '../../core/theme.dart';
 import '../../services/call_service.dart';
@@ -22,7 +24,15 @@ class _StartCallScreenState extends State<StartCallScreen> {
 
   Future<void> _start() async {
     setState(() => _starting = true);
-    final code = await CallService().createRoom();
+    final String code;
+    try {
+      code = kDemoMode ? generateRoomCode() : (await CallService.start(language: AppState.instance.call.myLanguage)).roomCode;
+    } on CallException catch (e) {
+      if (!mounted) return;
+      setState(() => _starting = false);
+      showToast(context, e.message, icon: Icons.error_outline_rounded);
+      return;
+    }
     if (!mounted) return;
     setState(() => _starting = false);
     context.go('/call/$code${_contactId.isEmpty ? '' : '?contact=$_contactId'}');
@@ -91,7 +101,7 @@ class _StartCallScreenState extends State<StartCallScreen> {
           label: const Text('Start Call'),
         ),
         const SizedBox(height: 14),
-        const PrototypeNotice(message: 'The call screen is a working UI demo. Real peer-to-peer video starts once the WebRTC signaling server is connected.'),
+        const PrototypeNotice(message: 'Video and voice are live. AI translation and captions are coming soon, so for now you hear each other’s original voice.'),
       ],
     );
 

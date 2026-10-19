@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/app_state.dart';
 import '../../core/formatters.dart';
 import '../../services/call_service.dart';
 import '../../services/session.dart';
@@ -35,7 +36,18 @@ class _JoinCallScreenState extends State<JoinCallScreen> {
       _error = null;
       _joining = true;
     });
-    await CallService().joinRoom(code);
+    if (!kDemoMode) {
+      try {
+        await CallService.join(code, language: AppState.instance.call.myLanguage);
+      } on CallException catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _joining = false;
+          _error = e.message;
+        });
+        return;
+      }
+    }
     if (!mounted) return;
     setState(() => _joining = false);
     context.go('/call/$code');
@@ -103,7 +115,7 @@ class _JoinCallScreenState extends State<JoinCallScreen> {
           ),
         ),
         const SizedBox(height: 14),
-        const PrototypeNotice(message: 'Any code in the format BOLO-1234 opens the demo call. Room lookup needs the signaling server.'),
+        const PrototypeNotice(message: 'Ask the person calling you for their room code. AI translation and captions are coming soon.'),
       ],
     );
 

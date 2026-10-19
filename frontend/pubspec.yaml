@@ -41,6 +41,7 @@ dependencies:
   video_player: ^2.10.1
   socket_io_client: ^3.1.6
   http: ^1.6.0
+  flutter_webrtc: ^1.6.2+hotfix.4
 
 dev_dependencies:
   flutter_test:

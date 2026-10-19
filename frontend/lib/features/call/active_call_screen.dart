@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
 import '../../core/app_state.dart';
@@ -14,6 +15,7 @@ import '../../services/session.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/brand.dart';
 import '../../widgets/common.dart';
+import '../../widgets/error_view.dart';
 import 'call_ended_view.dart';
 import 'remote_video.dart';
 import 'translation_panel.dart';
@@ -31,13 +33,33 @@ class ActiveCallScreen extends StatefulWidget {
 }
 
 class _ActiveCallScreenState extends State<ActiveCallScreen> {
-  late final AppUser _remote =
+  /// Demo mode plays a scripted call; otherwise this is a real WebRTC call.
+  final bool _demo = kDemoMode;
+  late final AppUser _demoRemote =
       widget.contactId == null ? contactById(demoContactId) : contactById(widget.contactId);
   final _call = AppState.instance.call;
 
   ConnectionStateKind _connection = ConnectionStateKind.connecting;
   StreamSubscription<ConnectionStateKind>? _connSub;
   DemoScenario _scenario = DemoScenario.normal;
+
+  CallSession? _session;
+  StreamSubscription<String>? _noticeSub;
+  String? _fatalError;
+  AppUser? _lastRemote;
+
+  /// Who is on the other end: the live peer, else whoever was last here,
+  /// else the contact this call was started for.
+  AppUser get _remote {
+    if (_demo) return _demoRemote;
+    final p = _session?.peer;
+    if (p != null) return AppUser(id: p.uid, name: p.name, email: '', preferredLanguage: p.language);
+    return _lastRemote ??
+        mockContacts.where((c) => c.id == widget.contactId).firstOrNull ??
+        const AppUser(id: '', name: 'Your guest', email: '', preferredLanguage: 'en');
+  }
+
+  bool get _hasPeer => _demo || _session?.peer != null;
 
   late bool _micOn = _call.micOn;
   late bool _cameraOn = _call.cameraOn;
@@ -50,8 +72,10 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   Timer? _clock;
   Duration _elapsed = Duration.zero;
 
-  late List<TranslationEntry> _entries = demoTranscript(_remote.name);
-  late TranslationEntry? _current = _entries.last;
+  // Live translation arrives with the AI pipeline (Phase 6); real calls
+  // carry the original audio until then.
+  late List<TranslationEntry> _entries = _demo ? demoTranscript(_remote.name) : [];
+  late TranslationEntry? _current = _demo ? _entries.last : null;
   TranslationStatus _pipeline = TranslationStatus.completed;
   Timer? _demoTimer;
   Timer? _demoFinish;
@@ -77,18 +101,86 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   }
 
   void _connect() {
+    if (!_demo) {
+      _connectLive();
+      return;
+    }
     _connSub?.cancel();
-    _connSub = CallService().connect().listen((s) {
+    _connSub = _simulateConnection().listen((s) {
       if (!mounted) return;
       setState(() => _connection = s);
       if (s == ConnectionStateKind.connected) {
-        _clock ??= Timer.periodic(const Duration(seconds: 1), (_) {
-          if (mounted && !_ended) setState(() => _elapsed += const Duration(seconds: 1));
-        });
+        _startClock();
         _scheduleNextLine();
       }
     });
   }
+
+  /// Demo mode: shows the handshake states without a server.
+  Stream<ConnectionStateKind> _simulateConnection() async* {
+    yield ConnectionStateKind.connecting;
+    await Future.delayed(const Duration(milliseconds: 1800));
+    yield ConnectionStateKind.connected;
+  }
+
+  void _startClock() {
+    _clock ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && !_ended) setState(() => _elapsed += const Duration(seconds: 1));
+    });
+  }
+
+  /// Picks up the call Start/Join opened, or joins the room directly when
+  /// the call screen was opened from a link.
+  Future<void> _connectLive() async {
+    var session = CallService.active;
+    if (session == null || session.roomCode != widget.roomCode) {
+      setState(() => _connection = ConnectionStateKind.connecting);
+      try {
+        session = await CallService.join(widget.roomCode, language: _call.myLanguage);
+      } on CallException catch (e) {
+        if (mounted) setState(() => _fatalError = e.message);
+        return;
+      }
+      if (!mounted) {
+        unawaited(session.leave());
+        return;
+      }
+    }
+    _attach(session);
+  }
+
+  void _attach(CallSession session) {
+    _session = session;
+    session.addListener(_onSessionChanged);
+    _noticeSub = session.notices.listen((m) {
+      if (mounted) showToast(context, m);
+    });
+    _onSessionChanged();
+  }
+
+  void _detach() {
+    _session?.removeListener(_onSessionChanged);
+    _noticeSub?.cancel();
+    _noticeSub = null;
+  }
+
+  void _onSessionChanged() {
+    final s = _session;
+    if (s == null || !mounted) return;
+    if (s.peer != null) _lastRemote = _remote;
+    setState(() {
+      _connection = s.state;
+      _micOn = s.micOn;
+      _cameraOn = s.cameraOn;
+      _speakerOn = s.speakerOn;
+    });
+    if (s.state == ConnectionStateKind.connected) _startClock();
+    if (s.state == ConnectionStateKind.ended && !_ended) _endCall();
+  }
+
+  void _toggleMic() => _session != null ? _session!.setMic(!_micOn) : setState(() => _micOn = !_micOn);
+  void _toggleCamera() => _session != null ? _session!.setCamera(!_cameraOn) : setState(() => _cameraOn = !_cameraOn);
+  void _toggleSpeaker() => _session != null ? _session!.setSpeaker(!_speakerOn) : setState(() => _speakerOn = !_speakerOn);
 
   ConnectionStateKind get _effectiveConnection {
     if (_connection != ConnectionStateKind.connected) return _connection;
@@ -102,6 +194,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   bool get _inCall => _effectiveConnection == ConnectionStateKind.connected || _effectiveConnection == ConnectionStateKind.unstable;
 
   TranslationStatus get _status {
+    if (!_demo) return TranslationStatus.unavailable;
     if (_scenario == DemoScenario.translationUnavailable) return TranslationStatus.unavailable;
     if (!_translateOn) return TranslationStatus.idle;
     return _pipeline;
@@ -148,6 +241,9 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
 
   @override
   void dispose() {
+    _detach();
+    // Leaving the screen hangs up.
+    if (!_ended) _session?.leave();
     _connSub?.cancel();
     _clock?.cancel();
     _demoTimer?.cancel();
@@ -157,13 +253,34 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   }
 
   void _endCall() {
+    _session?.leave();
     _clock?.cancel();
     _demoTimer?.cancel();
     _demoFinish?.cancel();
     setState(() => _ended = true);
   }
 
-  void _rejoin() {
+  Future<void> _rejoin() async {
+    if (!_demo) {
+      _detach();
+      _session = null;
+      try {
+        final session = await CallService.join(widget.roomCode, language: _call.myLanguage);
+        if (!mounted) {
+          unawaited(session.leave());
+          return;
+        }
+        setState(() {
+          _ended = false;
+          _elapsed = Duration.zero;
+          _clock = null;
+        });
+        _attach(session);
+      } on CallException catch (e) {
+        if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+      }
+      return;
+    }
     setState(() {
       _ended = false;
       _elapsed = Duration.zero;
@@ -183,7 +300,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     setState(() => _translateOn = !_translateOn);
   }
 
-  void _screenShare() => showToast(context, 'Screen sharing will be available once WebRTC is connected.');
+  void _screenShare() => showToast(context, 'Screen sharing isn’t available yet.');
 
   void _togglePanel(bool wide) {
     if (wide) {
@@ -236,15 +353,13 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (phone) ...[
-                  item(_speakerOn ? Icons.volume_up_rounded : Icons.volume_off_rounded, _speakerOn ? 'Mute speaker' : 'Unmute speaker',
-                      () => setState(() => _speakerOn = !_speakerOn)),
+                  item(_speakerOn ? Icons.volume_up_rounded : Icons.volume_off_rounded, _speakerOn ? 'Mute speaker' : 'Unmute speaker', _toggleSpeaker),
                   item(Icons.translate_rounded, _translateOn ? 'Pause translation' : 'Resume translation', _toggleTranslate),
                   item(Icons.screen_share_outlined, 'Share screen', _screenShare),
                 ],
-                item(Icons.copy_rounded, 'Copy room code', () {
-                  Clipboard.setData(ClipboardData(text: widget.roomCode));
-                  showToast(context, 'Room code ${widget.roomCode} copied.');
-                }),
+                if (_session?.canSwitchCamera ?? false) item(Icons.cameraswitch_rounded, 'Switch camera', () => _session?.switchCamera()),
+                item(Icons.copy_rounded, 'Copy room code', _copyCode),
+                if (_demo) ...[
                 const Divider(color: Color(0xFF292524)),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 6, 16, 2),
@@ -263,6 +378,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
                     active: _scenario == DemoScenario.translationUnavailable),
                 item(Icons.restart_alt_rounded, 'Back to normal', () => setState(() => _scenario = DemoScenario.normal),
                     active: _scenario == DemoScenario.normal),
+                ],
               ],
             ),
           ),
@@ -271,8 +387,28 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     );
   }
 
+  void _copyCode() {
+    Clipboard.setData(ClipboardData(text: widget.roomCode));
+    showToast(context, 'Room code ${widget.roomCode} copied.');
+  }
+
   @override
   Widget build(BuildContext context) {
+    final error = _fatalError;
+    if (error != null) {
+      return Scaffold(
+        appBar: AppBar(title: Text(widget.roomCode)),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ErrorView(message: error),
+              OutlinedButton(onPressed: () => context.go('/join-call'), child: const Text('Back to Join a call')),
+            ]),
+          ),
+        ),
+      );
+    }
     if (_ended) {
       return CallEndedView(
         contact: _remote,
@@ -289,8 +425,8 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyM): () => setState(() => _micOn = !_micOn),
-        const SingleActivator(LogicalKeyboardKey.keyV): () => setState(() => _cameraOn = !_cameraOn),
+        const SingleActivator(LogicalKeyboardKey.keyM): _toggleMic,
+        const SingleActivator(LogicalKeyboardKey.keyV): _toggleCamera,
         const SingleActivator(LogicalKeyboardKey.keyC): () => setState(() => _captionsOn = !_captionsOn),
         const SingleActivator(LogicalKeyboardKey.keyT): () => _togglePanel(wide),
       },
@@ -350,9 +486,15 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          RemoteVideo(contact: _remote, speaking: remoteSpeaking),
+          RemoteVideo(
+            contact: _remote,
+            speaking: remoteSpeaking,
+            renderer: _session?.remoteRenderer,
+            hasVideo: _session?.hasRemoteVideo ?? false,
+          ),
 
           // Name tag
+          if (_hasPeer)
           Positioned(
             left: 12,
             top: 12,
@@ -374,12 +516,19 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: localSpeaking ? Brand.marigold400 : Colors.white24, width: localSpeaking ? 2.5 : 1.5),
                 ),
+                clipBehavior: Clip.antiAlias,
                 child: Stack(children: [
-                  Center(
-                    child: _cameraOn
-                        ? Avatar(name: me?.name ?? 'You', size: phone ? 42 : 52)
-                        : const Icon(Icons.videocam_off_rounded, color: Colors.white38),
-                  ),
+                  if (_cameraOn && (_session?.hasLocalVideo ?? false))
+                    Positioned.fill(
+                      child: RTCVideoView(_session!.localRenderer,
+                          mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
+                    )
+                  else
+                    Center(
+                      child: _cameraOn
+                          ? Avatar(name: me?.name ?? 'You', size: phone ? 42 : 52)
+                          : const Icon(Icons.videocam_off_rounded, color: Colors.white38),
+                    ),
                   Positioned(
                     left: 6,
                     bottom: 6,
@@ -419,8 +568,10 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
           if (_inCall && _captionsOn && _translateOn && _current != null)
             Positioned(left: 12, right: 12, bottom: 14, child: Center(child: _Caption(entry: _current!, status: _status))),
 
-          if (conn == ConnectionStateKind.connecting || conn == ConnectionStateKind.reconnecting)
-            _ConnectingOverlay(reconnecting: conn == ConnectionStateKind.reconnecting, name: _remote.name),
+          if (conn == ConnectionStateKind.waiting)
+            _WaitingOverlay(roomCode: widget.roomCode, onCopy: _copyCode)
+          else if (conn == ConnectionStateKind.connecting || conn == ConnectionStateKind.reconnecting)
+            _ConnectingOverlay(reconnecting: conn == ConnectionStateKind.reconnecting, name: _hasPeer ? _remote.name : 'the call'),
         ],
       ),
     );
@@ -432,20 +583,20 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
         icon: _micOn ? Icons.mic_rounded : Icons.mic_off_rounded,
         label: _micOn ? 'Mute microphone (M)' : 'Unmute microphone (M)',
         state: _micOn ? _BtnState.normal : _BtnState.off,
-        onTap: () => setState(() => _micOn = !_micOn),
+        onTap: _toggleMic,
       ),
       _CallButton(
         icon: _cameraOn ? Icons.videocam_rounded : Icons.videocam_off_rounded,
         label: _cameraOn ? 'Turn camera off (V)' : 'Turn camera on (V)',
         state: _cameraOn ? _BtnState.normal : _BtnState.off,
-        onTap: () => setState(() => _cameraOn = !_cameraOn),
+        onTap: _toggleCamera,
       ),
       if (!phone)
         _CallButton(
           icon: _speakerOn ? Icons.volume_up_rounded : Icons.volume_off_rounded,
           label: _speakerOn ? 'Mute speaker' : 'Unmute speaker',
           state: _speakerOn ? _BtnState.normal : _BtnState.off,
-          onTap: () => setState(() => _speakerOn = !_speakerOn),
+          onTap: _toggleSpeaker,
         ),
       _CallButton(
         icon: _captionsOn ? Icons.closed_caption_rounded : Icons.closed_caption_disabled_outlined,
@@ -495,8 +646,9 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (connection) {
+      ConnectionStateKind.waiting => ('Waiting for the other person', const Color(0xFFA8A29E)),
       ConnectionStateKind.connecting => ('Connecting…', const Color(0xFFFBBF24)),
-      ConnectionStateKind.connected => ('Excellent connection', const Color(0xFF4ADE80)),
+      ConnectionStateKind.connected => ('Connected', const Color(0xFF4ADE80)),
       ConnectionStateKind.reconnecting => ('Reconnecting…', const Color(0xFFFBBF24)),
       ConnectionStateKind.unstable => ('Connection unstable', const Color(0xFFFB923C)),
       ConnectionStateKind.ended => ('Call ended', const Color(0xFFA8A29E)),
@@ -626,6 +778,43 @@ class _ConnectingOverlay extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Brand.ink300)),
+        ],
+      ),
+    );
+  }
+}
+
+class _WaitingOverlay extends StatelessWidget {
+  final String roomCode;
+  final VoidCallback onCopy;
+  const _WaitingOverlay({required this.roomCode, required this.onCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Brand.callBackground.withValues(alpha: 0.88),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const LogoMark(size: 64),
+          const SizedBox(height: 18),
+          const Text('Waiting for someone to join',
+              textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          const Text('Share this room code. The call starts as soon as they join.',
+              textAlign: TextAlign.center, style: TextStyle(color: Color(0xFFA8A29E), fontSize: 13)),
+          const SizedBox(height: 16),
+          SelectableText(roomCode,
+              style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: 2)),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: onCopy,
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white38)),
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Copy code'),
+          ),
         ],
       ),
     );

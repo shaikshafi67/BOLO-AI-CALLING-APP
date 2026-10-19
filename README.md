@@ -8,7 +8,7 @@ BoloAI is a real-time 1:1 video/voice calling app that removes language barriers
 
 ## Status
 
-Phase 1 — project scaffolding complete. Auth, calling, and AI pipeline are not yet implemented.
+Auth (Firebase), one-device sessions and real 1:1 video/voice calls (WebRTC over the Socket.IO signaling server) work. The AI translation pipeline (Phase 6) is not implemented yet: calls carry the original audio, and live captions show "Translation unavailable".
 
 ## Tech Stack
 
@@ -82,9 +82,10 @@ cd frontend && flutter test
 
 ## Known Limitations
 
-- Calling and the AI pipeline are not implemented yet (Phases 5–6).
-- Contacts, call history, and user profile are still mock data pending backend integration (Phase 4).
-- TURN server not yet selected/configured — required before cross-network calls will work in later phases.
+- The AI pipeline (speech recognition, translation, TTS, captions) is not implemented yet (Phase 6).
+- Calls are by room code; ringing a specific contact (incoming-call screen) is not wired up yet.- Contacts, call history, and user profile are still mock data pending backend integration (Phase 4).
+- No TURN server is configured by default. Calls work on the same network and behind most home routers; set `TURN_SERVER_URL`/`TURN_USERNAME`/`TURN_PASSWORD` in `backend/.env` for calls across mobile data or strict NATs (see `docs/signaling.md`).
+- Browsers only allow the camera on `https://` or `localhost`.
 - `firebase_core_web` is pinned to 3.10.0 via `dependency_overrides` in `frontend/pubspec.yaml` — 3.11.0 fails to compile for web (a dart2js `isA`/`JSObject` regression). Remove the override once upstream ships a fix.
 
 ## Roadmap

@@ -1,18 +1,22 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/theme.dart';
 import '../../models/user.dart';
 import '../../widgets/avatar.dart';
 
-/// The other participant's "camera".
+/// The other participant's camera.
 ///
-/// TODO: Connect WebRTC signaling server — replace the demo footage with an
-/// RTCVideoView bound to the remote MediaStream from flutter_webrtc.
+/// In a real call [renderer] carries their WebRTC video; while there is none
+/// (not connected yet, audio-only, camera off) their avatar shows instead.
+/// Demo mode passes no renderer and plays the contact's stock footage.
 class RemoteVideo extends StatefulWidget {
   final AppUser contact;
   final bool speaking;
-  const RemoteVideo({super.key, required this.contact, this.speaking = false});
+  final RTCVideoRenderer? renderer;
+  final bool hasVideo;
+  const RemoteVideo({super.key, required this.contact, this.speaking = false, this.renderer, this.hasVideo = false});
 
   @override
   State<RemoteVideo> createState() => _RemoteVideoState();
@@ -29,7 +33,7 @@ class _RemoteVideoState extends State<RemoteVideo> {
   void initState() {
     super.initState();
     final src = widget.contact.demoVideo;
-    if (src != null && _platformSupportsVideo) {
+    if (widget.renderer == null && src != null && _platformSupportsVideo) {
       final c = VideoPlayerController.asset(src);
       _controller = c;
       c.initialize().then((_) {
@@ -55,10 +59,15 @@ class _RemoteVideoState extends State<RemoteVideo> {
   @override
   Widget build(BuildContext context) {
     final c = _controller;
-    final poster = widget.contact.demoPoster;
+    final poster = widget.renderer == null ? widget.contact.demoPoster : null;
 
     Widget content;
-    if (c != null && c.value.isInitialized) {
+    if (widget.renderer != null && widget.hasVideo) {
+      content = Container(
+        color: const Color(0xFF1C1917),
+        child: RTCVideoView(widget.renderer!, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
+      );
+    } else if (c != null && c.value.isInitialized) {
       content = FittedBox(
         fit: BoxFit.cover,
         clipBehavior: Clip.hardEdge,
@@ -67,7 +76,7 @@ class _RemoteVideoState extends State<RemoteVideo> {
     } else if (poster != null) {
       content = Image.asset(poster, fit: BoxFit.cover);
     } else {
-      // No footage for this contact: placeholder until WebRTC provides a stream.
+      // No video from this person yet (or camera off).
       content = Container(
         color: const Color(0xFF292524),
         alignment: Alignment.center,

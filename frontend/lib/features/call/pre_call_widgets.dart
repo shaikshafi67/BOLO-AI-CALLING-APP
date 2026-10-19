@@ -1,19 +1,87 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../../core/app_state.dart';
 import '../../core/theme.dart';
+import '../../services/call_service.dart';
+import '../../services/session.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/common.dart';
 
-/// Camera/mic check before a call. The preview is a mock until
-/// flutter_webrtc provides the local stream (Phase 5).
-class CameraPreviewCard extends StatelessWidget {
+/// Camera/mic check before a call. Opens the real camera and microphone
+/// (demo mode shows a placeholder); the call then takes over the same stream.
+class CameraPreviewCard extends StatefulWidget {
   final String name;
   final bool showSpeaker;
   const CameraPreviewCard({super.key, required this.name, this.showSpeaker = true});
 
   @override
+  State<CameraPreviewCard> createState() => _CameraPreviewCardState();
+}
+
+class _CameraPreviewCardState extends State<CameraPreviewCard> {
+  final _call = AppState.instance.call;
+  final _renderer = RTCVideoRenderer();
+  MediaStream? _stream;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kDemoMode) return;
+    LocalMedia.previewShown = true;
+    _call.addListener(_applyToggles);
+    _open();
+  }
+
+  Future<void> _open() async {
+    try {
+      await _renderer.initialize();
+      final stream = await LocalMedia.preview();
+      if (!mounted) return;
+      _renderer.srcObject = stream;
+      setState(() => _stream = stream);
+      _applyToggles();
+    } on CallException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Camera preview unavailable.');
+    }
+  }
+
+  void _applyToggles() {
+    final s = _stream;
+    if (s == null) return;
+    for (final t in s.getVideoTracks()) {
+      t.enabled = _call.cameraOn;
+    }
+    for (final t in s.getAudioTracks()) {
+      t.enabled = _call.micOn;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (!kDemoMode) {
+      _call.removeListener(_applyToggles);
+      LocalMedia.previewShown = false;
+      _renderer.srcObject = null;
+      _renderer.dispose();
+      // Stops the camera unless the call already took it over.
+      LocalMedia.releasePreview();
+    }
+    super.dispose();
+  }
+
+  bool get _showVideo => _call.cameraOn && (_stream?.getVideoTracks().isNotEmpty ?? false);
+
+  @override
   Widget build(BuildContext context) {
-    final call = AppState.instance.call;
+    final call = _call;
+    final name = widget.name;
+    final showSpeaker = widget.showSpeaker;
+    final status = kDemoMode
+        ? (call.cameraOn ? 'Camera preview (mock)' : 'Camera is off')
+        : _error ?? (!call.cameraOn ? 'Camera is off' : _stream == null ? 'Starting camera…' : 'No camera found: voice only');
     return ListenableBuilder(
       listenable: call,
       builder: (context, _) => ClipRRect(
@@ -24,19 +92,24 @@ class CameraPreviewCard extends StatelessWidget {
             color: Brand.callSurface,
             child: Stack(
               children: [
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Avatar(name: name, size: 76),
-                      const SizedBox(height: 10),
-                      Text(
-                        call.cameraOn ? 'Camera preview (mock)' : 'Camera is off',
-                        style: const TextStyle(color: Colors.white60, fontSize: 13),
+                if (_showVideo)
+                  Positioned.fill(
+                    child: RTCVideoView(_renderer, mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
+                  )
+                else
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Avatar(name: name, size: 76),
+                          const SizedBox(height: 10),
+                          Text(status, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
                 Positioned(
                   left: 12,
                   top: 12,
