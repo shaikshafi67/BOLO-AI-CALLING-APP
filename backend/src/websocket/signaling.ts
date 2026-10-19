@@ -4,6 +4,7 @@ import { isSupportedLanguageCode } from '../config/supportedLanguages';
 import { Participant, ROOM_CODE_PATTERN, RoomManager } from './roomManager';
 import { SessionStore, sessionStatus } from '../sessions/sessionStore';
 import { IceServer, iceServersFromEnv } from './iceServers';
+import { CallRecorder } from './callRecorder';
 
 /// Identity extracted from a verified Firebase ID token.
 export interface VerifiedUser {
@@ -18,6 +19,9 @@ const SIGNAL_TYPES = ['offer', 'answer', 'ice-candidate'] as const;
 type SignalType = (typeof SIGNAL_TYPES)[number];
 
 type Ack = (response: Record<string, unknown>) => void;
+
+/// Longest chat message relayed during a call.
+const MAX_CHAT_LENGTH = 1000;
 
 /// Attaches the WebRTC signaling server to the HTTP server.
 ///
@@ -35,12 +39,65 @@ export function attachSignaling(
     rooms?: RoomManager;
     /// STUN/TURN servers sent with room:create / room:join replies.
     iceServers?: IceServer[];
+    /// Records connected calls for call history.
+    calls?: CallRecorder;
     corsOrigin?: string | string[];
   },
 ) {
   const verifyToken = options.verifyToken;
   const rooms = options.rooms ?? new RoomManager();
   const iceServers = options.iceServers ?? iceServersFromEnv();
+
+  /// The recorded call in each room, kept until the room empties so a
+  /// reconnect by the same two people continues the same call.
+  /// Database writes for one call run one after another (`queue`), so a quick
+  /// hang-up still ends a call whose insert hasn't finished yet.
+  const roomCalls = new Map<string, { callId: Promise<string | null>; queue: Promise<unknown>; uids: string[]; live: boolean }>();
+  const logError = (what: string) => (err: unknown) => console.error(`[ERROR] ${what}`, err);
+
+  function enqueue(entry: { callId: Promise<string | null>; queue: Promise<unknown> }, what: string, op: (id: string) => Promise<void>) {
+    entry.queue = entry.queue.then(async () => {
+      const id = await entry.callId;
+      if (id) await op(id);
+    }).catch(logError(what));
+  }
+
+  function callConnected(roomCode: string) {
+    const recorder = options.calls;
+    const [caller, receiver] = rooms.participants(roomCode);
+    if (!recorder || !caller || !receiver) return;
+    const existing = roomCalls.get(roomCode);
+    if (existing && existing.uids.includes(caller.uid) && existing.uids.includes(receiver.uid)) {
+      if (!existing.live) {
+        existing.live = true;
+        enqueue(existing, 'resume call', (id) => recorder.resumed(id));
+      }
+      return;
+    }
+    const callId = recorder
+      .started({
+        roomCode,
+        callerUid: caller.uid,
+        callerLanguage: caller.language,
+        receiverUid: receiver.uid,
+        receiverLanguage: receiver.language,
+      })
+      .catch((err) => {
+        logError('record call')(err);
+        return null;
+      });
+    roomCalls.set(roomCode, { callId, queue: callId, uids: [caller.uid, receiver.uid], live: true });
+  }
+
+  function callDisconnected(roomCode: string) {
+    const entry = roomCalls.get(roomCode);
+    const recorder = options.calls;
+    if (entry?.live && recorder) {
+      entry.live = false;
+      enqueue(entry, 'end call', (id) => recorder.ended(id));
+    }
+    if (rooms.participants(roomCode).length === 0) roomCalls.delete(roomCode);
+  }
 
   const io = new Server(httpServer, { cors: { origin: options.corsOrigin ?? '*' } });
 
@@ -94,6 +151,7 @@ export function attachSignaling(
       socket.join(roomCode);
       socket.to(roomCode).emit('peer:joined', { uid: user.uid, name: displayName, language });
       ack({ ok: true, roomCode, peers: result.peers.map(publicView), iceServers });
+      if (result.peers.length > 0) callConnected(roomCode);
     };
 
     // Create a new room and join it as the first participant.
@@ -127,6 +185,25 @@ export function attachSignaling(
       reply({ ok: true });
     });
 
+    // In-call messages to the other participant: chat text, or this person's
+    // media state (mic/camera/screen sharing) so their screen can show it.
+    socket.on('message', (payload: { kind?: unknown; text?: unknown; state?: unknown } = {}, ack?: Ack) => {
+      const reply = typeof ack === 'function' ? ack : () => undefined;
+      const roomCode = rooms.roomOf(socket.id);
+      if (!roomCode) return reply({ ok: false, error: 'not_in_room' });
+      let message: Record<string, unknown>;
+      if (payload?.kind === 'chat' && typeof payload.text === 'string' && payload.text.trim().length > 0) {
+        message = { kind: 'chat', text: payload.text.trim().slice(0, MAX_CHAT_LENGTH) };
+      } else if (payload?.kind === 'state' && payload.state && typeof payload.state === 'object') {
+        const s = payload.state as Record<string, unknown>;
+        message = { kind: 'state', state: { mic: s.mic === true, camera: s.camera === true, sharing: s.sharing === true } };
+      } else {
+        return reply({ ok: false, error: 'invalid_message' });
+      }
+      socket.to(roomCode).emit('message', { ...message, from: user.uid, name: displayName, at: Date.now() });
+      reply({ ok: true });
+    });
+
     // Tell the other side which language this person now speaks.
     socket.on('language:update', (payload: { language?: unknown } = {}, ack?: Ack) => {
       const reply = typeof ack === 'function' ? ack : () => undefined;
@@ -143,6 +220,7 @@ export function attachSignaling(
       if (!left) return;
       socket.leave(left.roomCode);
       socket.to(left.roomCode).emit('peer:left', { uid: left.participant.uid });
+      callDisconnected(left.roomCode);
     };
 
     socket.on('room:leave', (ack?: Ack) => {

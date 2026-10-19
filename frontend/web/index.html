@@ -29,10 +29,26 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>boloai_app</title>
+  <title>BoloAI</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body { margin: 0; height: 100%; background: #f7f3ec; }
+    @media (prefers-color-scheme: dark) { html, body { background: #1c1917; } #boot p { color: #d6d3d1; } }
+    #boot { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: system-ui, sans-serif; }
+    #boot p { color: #57534e; font-size: 15px; margin: 18px 0 0; }
+    #boot .spin { width: 34px; height: 34px; border: 3px solid #c7d2fe; border-top-color: #3730a3; border-radius: 50%; animation: s 0.9s linear infinite; }
+    @keyframes s { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
+  <!-- Shown until the Flutter app draws its first frame. -->
+  <div id="boot"><div class="spin"></div><p>Loading BoloAI…</p></div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var el = document.getElementById('boot');
+      if (el) el.remove();
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

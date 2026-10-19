@@ -1,4 +1,7 @@
+import fs from 'fs';
+import path from 'path';
 import express, { NextFunction, Request, Response } from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import { healthRouter } from './routes/health.routes';
 import { userRouter } from './routes/user.routes';
@@ -22,6 +25,15 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/sessions', createSessionRouter(pgSessionStore, requireAuth, options.onSessionClaimed ?? (() => undefined)));
   app.use('/api/users', userRouter);
   app.use('/api/calls', callRouter);
+
+  // Serves the built Flutter web app (frontend/build/web) from the same
+  // address as the API, so one public link (e.g. a tunnel) runs everything.
+  const webDir = path.resolve(__dirname, '..', '..', 'frontend', 'build', 'web');
+  if (fs.existsSync(path.join(webDir, 'index.html'))) {
+    // gzip: main.dart.js is ~3 MB raw, which is slow over a home upload link.
+    app.use(compression());
+    app.use(express.static(webDir));
+  }
 
   app.use((req, res) => {
     res.status(404).json({ error: 'Not found' });

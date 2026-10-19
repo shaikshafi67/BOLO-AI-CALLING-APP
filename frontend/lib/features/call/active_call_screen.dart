@@ -11,12 +11,14 @@ import '../../core/theme.dart';
 import '../../models/translation_entry.dart';
 import '../../models/user.dart';
 import '../../services/call_service.dart';
+import '../../services/history_store.dart';
 import '../../services/session.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/brand.dart';
 import '../../widgets/common.dart';
 import '../../widgets/error_view.dart';
 import 'call_ended_view.dart';
+import 'call_extras.dart';
 import 'remote_video.dart';
 import 'translation_panel.dart';
 
@@ -35,8 +37,7 @@ class ActiveCallScreen extends StatefulWidget {
 class _ActiveCallScreenState extends State<ActiveCallScreen> {
   /// Demo mode plays a scripted call; otherwise this is a real WebRTC call.
   final bool _demo = kDemoMode;
-  late final AppUser _demoRemote =
-      widget.contactId == null ? contactById(demoContactId) : contactById(widget.contactId);
+  late final AppUser _demoRemote = widget.contactId == null ? contactById(demoContactId) : contactById(widget.contactId);
   final _call = AppState.instance.call;
 
   ConnectionStateKind _connection = ConnectionStateKind.connecting;
@@ -54,9 +55,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     if (_demo) return _demoRemote;
     final p = _session?.peer;
     if (p != null) return AppUser(id: p.uid, name: p.name, email: '', preferredLanguage: p.language);
-    return _lastRemote ??
-        mockContacts.where((c) => c.id == widget.contactId).firstOrNull ??
-        const AppUser(id: '', name: 'Your guest', email: '', preferredLanguage: 'en');
+    return _lastRemote ?? HistoryStore.instance.personById(widget.contactId) ?? const AppUser(id: '', name: 'Your guest', email: '', preferredLanguage: 'en');
   }
 
   bool get _hasPeer => _demo || _session?.peer != null;
@@ -67,6 +66,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   late bool _captionsOn = _call.liveCaptions;
   bool _translateOn = true;
   bool _panelOpen = false;
+  bool _chatOpen = false;
   bool _ended = false;
 
   Timer? _clock;
@@ -156,6 +156,12 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
       if (mounted) showToast(context, m);
     });
     _onSessionChanged();
+    final problem = session.cameraProblem;
+    if (problem != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showToast(context, problem, icon: Icons.videocam_off_rounded);
+      });
+    }
   }
 
   void _detach() {
@@ -253,6 +259,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   }
 
   void _endCall() {
+    if (_session != null) HistoryStore.instance.refreshSoon();
     _session?.leave();
     _clock?.cancel();
     _demoTimer?.cancel();
@@ -300,11 +307,58 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     setState(() => _translateOn = !_translateOn);
   }
 
-  void _screenShare() => showToast(context, 'Screen sharing isn’t available yet.');
+  void _screenShare() {
+    final s = _session;
+    if (s == null) {
+      showToast(context, 'Screen sharing works in real calls.');
+      return;
+    }
+    s.toggleScreenShare();
+  }
+
+  void _openFilters() {
+    final s = _session;
+    if (s == null) {
+      showToast(context, 'Filters work in real calls.');
+    } else if (!s.filtersSupported) {
+      showToast(context, s.hasLocalVideo ? 'Filters are available in the browser version for now.' : 'Turn your camera on to use filters.');
+    } else {
+      showFilterSheet(context, s);
+    }
+  }
+
+  void _toggleChat(bool wide) {
+    final s = _session;
+    if (s == null) {
+      showToast(context, 'Chat works in real calls.');
+      return;
+    }
+    if (wide) {
+      setState(() {
+        _chatOpen = !_chatOpen;
+        _panelOpen = false;
+      });
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Brand.callSurface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      clipBehavior: Clip.antiAlias,
+      builder: (sheet) => FractionallySizedBox(
+        heightFactor: 0.8,
+        child: ChatPanel(session: s, onClose: () => Navigator.of(sheet).pop()),
+      ),
+    );
+  }
 
   void _togglePanel(bool wide) {
     if (wide) {
-      setState(() => _panelOpen = !_panelOpen);
+      setState(() {
+        _panelOpen = !_panelOpen;
+        _chatOpen = false;
+      });
       return;
     }
     showModalBottomSheet<void>(
@@ -339,14 +393,14 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
       showDragHandle: true,
       builder: (sheet) {
         Widget item(IconData icon, String label, VoidCallback onTap, {bool active = false}) => ListTile(
-              leading: Icon(icon, color: active ? Brand.marigold300 : const Color(0xFFA8A29E)),
-              title: Text(label, style: TextStyle(color: active ? Brand.marigold300 : Colors.white)),
-              trailing: active ? const Icon(Icons.check_rounded, color: Brand.marigold300, size: 18) : null,
-              onTap: () {
-                Navigator.of(sheet).pop();
-                onTap();
-              },
-            );
+          leading: Icon(icon, color: active ? Brand.marigold300 : const Color(0xFFA8A29E)),
+          title: Text(label, style: TextStyle(color: active ? Brand.marigold300 : Colors.white)),
+          trailing: active ? const Icon(Icons.check_rounded, color: Brand.marigold300, size: 18) : null,
+          onTap: () {
+            Navigator.of(sheet).pop();
+            onTap();
+          },
+        );
         return SafeArea(
           child: SingleChildScrollView(
             child: Column(
@@ -355,29 +409,56 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
                 if (phone) ...[
                   item(_speakerOn ? Icons.volume_up_rounded : Icons.volume_off_rounded, _speakerOn ? 'Mute speaker' : 'Unmute speaker', _toggleSpeaker),
                   item(Icons.translate_rounded, _translateOn ? 'Pause translation' : 'Resume translation', _toggleTranslate),
-                  item(Icons.screen_share_outlined, 'Share screen', _screenShare),
+                  item(
+                    Icons.screen_share_outlined,
+                    (_session?.sharing ?? false) ? 'Stop sharing' : 'Share screen',
+                    _screenShare,
+                    active: _session?.sharing ?? false,
+                  ),
+                  item(Icons.auto_awesome_rounded, 'Camera filters', _openFilters),
+                  item(Icons.translate_outlined, 'Translation panel', () => _togglePanel(false)),
                 ],
                 if (_session?.canSwitchCamera ?? false) item(Icons.cameraswitch_rounded, 'Switch camera', () => _session?.switchCamera()),
                 item(Icons.copy_rounded, 'Copy room code', _copyCode),
                 if (_demo) ...[
-                const Divider(color: Color(0xFF292524)),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 6, 16, 2),
-                  child: Row(children: [
-                    Icon(Icons.science_outlined, size: 16, color: Brand.marigold300),
-                    SizedBox(width: 8),
-                    Text('PRESENTER DEMO: SIMULATE STATE',
-                        style: TextStyle(color: Brand.marigold300, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6)),
-                  ]),
-                ),
-                item(Icons.wifi_off_rounded, 'Connection unstable', () => setState(() => _scenario = DemoScenario.unstable),
-                    active: _scenario == DemoScenario.unstable),
-                item(Icons.sync_rounded, 'Reconnecting', () => setState(() => _scenario = DemoScenario.reconnecting),
-                    active: _scenario == DemoScenario.reconnecting),
-                item(Icons.block_rounded, 'Translation unavailable', () => setState(() => _scenario = DemoScenario.translationUnavailable),
-                    active: _scenario == DemoScenario.translationUnavailable),
-                item(Icons.restart_alt_rounded, 'Back to normal', () => setState(() => _scenario = DemoScenario.normal),
-                    active: _scenario == DemoScenario.normal),
+                  const Divider(color: Color(0xFF292524)),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 6, 16, 2),
+                    child: Row(
+                      children: [
+                        Icon(Icons.science_outlined, size: 16, color: Brand.marigold300),
+                        SizedBox(width: 8),
+                        Text(
+                          'PRESENTER DEMO: SIMULATE STATE',
+                          style: TextStyle(color: Brand.marigold300, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6),
+                        ),
+                      ],
+                    ),
+                  ),
+                  item(
+                    Icons.wifi_off_rounded,
+                    'Connection unstable',
+                    () => setState(() => _scenario = DemoScenario.unstable),
+                    active: _scenario == DemoScenario.unstable,
+                  ),
+                  item(
+                    Icons.sync_rounded,
+                    'Reconnecting',
+                    () => setState(() => _scenario = DemoScenario.reconnecting),
+                    active: _scenario == DemoScenario.reconnecting,
+                  ),
+                  item(
+                    Icons.block_rounded,
+                    'Translation unavailable',
+                    () => setState(() => _scenario = DemoScenario.translationUnavailable),
+                    active: _scenario == DemoScenario.translationUnavailable,
+                  ),
+                  item(
+                    Icons.restart_alt_rounded,
+                    'Back to normal',
+                    () => setState(() => _scenario = DemoScenario.normal),
+                    active: _scenario == DemoScenario.normal,
+                  ),
                 ],
               ],
             ),
@@ -401,22 +482,19 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              ErrorView(message: error),
-              OutlinedButton(onPressed: () => context.go('/join-call'), child: const Text('Back to Join a call')),
-            ]),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ErrorView(message: error),
+                OutlinedButton(onPressed: () => context.go('/join-call'), child: const Text('Back to Join a call')),
+              ],
+            ),
           ),
         ),
       );
     }
     if (_ended) {
-      return CallEndedView(
-        contact: _remote,
-        duration: _elapsed,
-        translatedLines: _entries.length,
-        onRejoin: _rejoin,
-        onDone: () => context.go('/home'),
-      );
+      return CallEndedView(contact: _remote, duration: _elapsed, translatedLines: _entries.length, onRejoin: _rejoin, onDone: () => context.go('/home'));
     }
 
     final size = MediaQuery.sizeOf(context);
@@ -436,37 +514,44 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
           value: SystemUiOverlayStyle.light,
           child: Scaffold(
             backgroundColor: Brand.callBackground,
-            body: SafeArea(
-              child: Column(
-                children: [
-                  _TopBar(
-                    roomCode: widget.roomCode,
-                    connection: _effectiveConnection,
-                    from: _call.myLanguage,
-                    to: _call.targetLanguage,
-                    elapsed: _elapsed,
-                  ),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 8), child: _stage(phone))),
-                        if (wide && _panelOpen)
-                          SizedBox(
-                            width: 380,
-                            child: TranslationPanel(
-                              entries: _entries,
-                              current: _current,
-                              status: _status,
-                              myLanguage: _call.myLanguage,
-                              targetLanguage: _call.targetLanguage,
-                              onClose: () => setState(() => _panelOpen = false),
-                            ),
+            body: Listener(
+              // Any tap lets the browser start their voice if it was blocked.
+              onPointerDown: (_) {
+                if (_session?.audioBlocked ?? false) _session!.unlockAudio();
+              },
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    _TopBar(roomCode: widget.roomCode, connection: _effectiveConnection, from: _call.myLanguage, to: _call.targetLanguage, elapsed: _elapsed),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 8), child: _stage(phone)),
                           ),
-                      ],
+                          if (wide && _chatOpen && _session != null)
+                            SizedBox(
+                              width: 380,
+                              child: ChatPanel(session: _session!, onClose: () => setState(() => _chatOpen = false)),
+                            ),
+                          if (wide && _panelOpen)
+                            SizedBox(
+                              width: 380,
+                              child: TranslationPanel(
+                                entries: _entries,
+                                current: _current,
+                                status: _status,
+                                myLanguage: _call.myLanguage,
+                                targetLanguage: _call.targetLanguage,
+                                onClose: () => setState(() => _panelOpen = false),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  _controls(phone, wide),
-                ],
+                    _controls(phone, wide),
+                  ],
+                ),
               ),
             ),
           ),
@@ -491,16 +576,21 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
             speaking: remoteSpeaking,
             renderer: _session?.remoteRenderer,
             hasVideo: _session?.hasRemoteVideo ?? false,
+            contain: _session?.peerSharing ?? false,
           ),
 
           // Name tag
           if (_hasPeer)
-          Positioned(
-            left: 12,
-            top: 12,
-            child: _Chip(child: Text('${_remote.name}  ·  Speaks ${languageFor(_remote.preferredLanguage).label}',
-                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500))),
-          ),
+            Positioned(
+              left: 12,
+              top: 12,
+              child: _Chip(
+                child: Text(
+                  '${_remote.name}  ·  Speaks ${languageFor(_remote.preferredLanguage).label}',
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ),
 
           // Local preview (self view)
           Positioned(
@@ -517,42 +607,100 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
                   border: Border.all(color: localSpeaking ? Brand.marigold400 : Colors.white24, width: localSpeaking ? 2.5 : 1.5),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: Stack(children: [
-                  if (_cameraOn && (_session?.hasLocalVideo ?? false))
-                    Positioned.fill(
-                      child: RTCVideoView(_session!.localRenderer,
-                          mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
-                    )
-                  else
-                    Center(
-                      child: _cameraOn
-                          ? Avatar(name: me?.name ?? 'You', size: phone ? 42 : 52)
-                          : const Icon(Icons.videocam_off_rounded, color: Colors.white38),
+                child: Stack(
+                  children: [
+                    if (_cameraOn && (_session?.hasLocalVideo ?? false))
+                      Positioned.fill(child: RTCVideoView(_session!.localRenderer, mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover))
+                    else
+                      Center(
+                        child: _cameraOn
+                            ? Avatar(name: me?.name ?? 'You', size: phone ? 42 : 52)
+                            : const Icon(Icons.videocam_off_rounded, color: Colors.white38),
+                      ),
+                    Positioned(
+                      left: 6,
+                      bottom: 6,
+                      child: _Chip(
+                        small: true,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!_micOn) ...[const Icon(Icons.mic_off_rounded, size: 11, color: Color(0xFFF87171)), const SizedBox(width: 3)],
+                            Text(me?.firstName ?? 'You', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                          ],
+                        ),
+                      ),
                     ),
-                  Positioned(
-                    left: 6,
-                    bottom: 6,
-                    child: _Chip(
-                      small: true,
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        if (!_micOn) ...[const Icon(Icons.mic_off_rounded, size: 11, color: Color(0xFFF87171)), const SizedBox(width: 3)],
-                        Text(me?.firstName ?? 'You', style: const TextStyle(color: Colors.white, fontSize: 11)),
-                      ]),
-                    ),
-                  ),
-                ]),
+                  ],
+                ),
               ),
             ),
           ),
 
+          // Their state, as they reported it.
+          if (_hasPeer && _session != null && (!_session!.peerMicOn || _session!.peerSharing))
+            Positioned(
+              left: 12,
+              top: phone ? 92 : 88,
+              child: _Chip(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _session!.peerSharing ? Icons.screen_share_rounded : Icons.mic_off_rounded,
+                      size: 14,
+                      color: _session!.peerSharing ? Brand.marigold300 : const Color(0xFFF87171),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _session!.peerSharing
+                          ? '${_remote.firstName} is sharing their screen${_session!.peerMicOn ? '' : ' (muted)'}'
+                          : '${_remote.firstName} is muted',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (_session?.audioBlocked ?? false)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 70,
+              child: Center(
+                child: FilledButton.icon(
+                  onPressed: () => _session?.unlockAudio(),
+                  icon: const Icon(Icons.volume_up_rounded),
+                  label: Text('Tap to hear ${_remote.firstName}'),
+                ),
+              ),
+            ),
+          if (_session?.sharing ?? false)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 14,
+              child: Center(
+                child: _Pill(color: Brand.ink600, icon: Icons.screen_share_rounded, text: 'You’re sharing your screen'),
+              ),
+            ),
           if (!_micOn && _inCall && conn != ConnectionStateKind.unstable)
-            const Positioned(top: 12, left: 0, right: 0, child: Center(child: _Pill(color: Brand.danger, icon: Icons.mic_off_rounded, text: 'You’re muted'))),
+            const Positioned(
+              top: 12,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: _Pill(color: Brand.danger, icon: Icons.mic_off_rounded, text: 'You’re muted'),
+              ),
+            ),
           if (conn == ConnectionStateKind.unstable)
             const Positioned(
               top: 12,
               left: 0,
               right: 0,
-              child: Center(child: _Pill(color: Color(0xFFEA580C), icon: Icons.wifi_off_rounded, text: 'Connection unstable: video quality reduced')),
+              child: Center(
+                child: _Pill(color: Color(0xFFEA580C), icon: Icons.wifi_off_rounded, text: 'Connection unstable: video quality reduced'),
+              ),
             ),
           if (_inCall && _status == TranslationStatus.unavailable)
             Positioned(
@@ -560,13 +708,19 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
               left: 12,
               right: phone ? 120 : null,
               child: const _Chip(
-                child: Text('Translation unavailable. The call continues with original audio.',
-                    style: TextStyle(color: Color(0xFFFCA5A5), fontSize: 12)),
+                child: Text('Translation unavailable. The call continues with original audio.', style: TextStyle(color: Color(0xFFFCA5A5), fontSize: 12)),
               ),
             ),
 
           if (_inCall && _captionsOn && _translateOn && _current != null)
-            Positioned(left: 12, right: 12, bottom: 14, child: Center(child: _Caption(entry: _current!, status: _status))),
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 14,
+              child: Center(
+                child: _Caption(entry: _current!, status: _status),
+              ),
+            ),
 
           if (conn == ConnectionStateKind.waiting)
             _WaitingOverlay(roomCode: widget.roomCode, onCopy: _copyCode)
@@ -611,13 +765,28 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
           state: _translateOn ? _BtnState.active : _BtnState.normal,
           onTap: _toggleTranslate,
         ),
-      _CallButton(
-        icon: Icons.forum_outlined,
-        label: 'Translation panel (T)',
-        state: wide && _panelOpen ? _BtnState.active : _BtnState.normal,
-        onTap: () => _togglePanel(wide),
-      ),
-      if (!phone) _CallButton(icon: Icons.screen_share_outlined, label: 'Share screen', onTap: _screenShare),
+      _ChatButton(unread: _session?.unreadChat ?? 0, active: wide && _chatOpen, onTap: () => _toggleChat(wide)),
+      if (!phone)
+        _CallButton(
+          icon: Icons.auto_awesome_rounded,
+          label: 'Camera filters',
+          onTap: _openFilters,
+          state: (_session?.filter.index ?? 0) > 0 ? _BtnState.active : _BtnState.normal,
+        ),
+      if (!phone)
+        _CallButton(
+          icon: Icons.translate_outlined,
+          label: 'Translation panel (T)',
+          state: wide && _panelOpen ? _BtnState.active : _BtnState.normal,
+          onTap: () => _togglePanel(wide),
+        ),
+      if (!phone)
+        _CallButton(
+          icon: (_session?.sharing ?? false) ? Icons.stop_screen_share_rounded : Icons.screen_share_outlined,
+          label: (_session?.sharing ?? false) ? 'Stop sharing' : 'Share screen',
+          state: (_session?.sharing ?? false) ? _BtnState.active : _BtnState.normal,
+          onTap: _screenShare,
+        ),
       _CallButton(icon: Icons.more_horiz_rounded, label: 'More options', onTap: () => _openMore(phone)),
     ];
 
@@ -626,7 +795,11 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          for (final b in buttons) Padding(padding: EdgeInsets.symmetric(horizontal: phone ? 3 : 5), child: b),
+          for (final b in buttons)
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: phone ? 3 : 5),
+              child: b,
+            ),
           SizedBox(width: phone ? 6 : 14),
           _CallButton(icon: Icons.call_end_rounded, label: 'End call', state: _BtnState.danger, onTap: _endCall, wide: true),
         ],
@@ -664,18 +837,29 @@ class _TopBar extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  const Icon(Icons.lock_rounded, size: 13, color: Color(0xFF4ADE80)),
-                  const SizedBox(width: 4),
-                  Text(roomCode, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, letterSpacing: 0.8, fontSize: 14)),
-                ]),
+                Row(
+                  children: [
+                    const Icon(Icons.lock_rounded, size: 13, color: Color(0xFF4ADE80)),
+                    const SizedBox(width: 4),
+                    Text(
+                      roomCode,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, letterSpacing: 0.8, fontSize: 14),
+                    ),
+                  ],
+                ),
                 Semantics(
                   liveRegion: true,
-                  child: Row(children: [
-                    Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                    const SizedBox(width: 6),
-                    Text(label, style: const TextStyle(color: Color(0xFFD6D3D1), fontSize: 12)),
-                  ]),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(label, style: const TextStyle(color: Color(0xFFD6D3D1), fontSize: 12)),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -683,18 +867,25 @@ class _TopBar extends StatelessWidget {
           if (!phone) ...[
             _Chip(
               color: Brand.ink700.withValues(alpha: 0.5),
-              child: Text('${languageFor(from).label} → ${languageFor(to).label}',
-                  style: const TextStyle(color: Brand.ink100, fontSize: 12, fontWeight: FontWeight.w600)),
+              child: Text(
+                '${languageFor(from).label} → ${languageFor(to).label}',
+                style: const TextStyle(color: Brand.ink100, fontSize: 12, fontWeight: FontWeight.w600),
+              ),
             ),
             const SizedBox(width: 8),
           ],
           _Chip(
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.schedule_rounded, size: 13, color: Color(0xFFA8A29E)),
-              const SizedBox(width: 5),
-              Text(formatDuration(elapsed),
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
-            ]),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.schedule_rounded, size: 13, color: Color(0xFFA8A29E)),
+                const SizedBox(width: 5),
+                Text(
+                  formatDuration(elapsed),
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -738,10 +929,7 @@ class _Caption extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              if (processing) ...[
-                const SizedBox(height: 4),
-                const Text('BoloAI is translating…', style: TextStyle(color: Brand.ink300, fontSize: 11)),
-              ],
+              if (processing) ...[const SizedBox(height: 4), const Text('BoloAI is translating…', style: TextStyle(color: Brand.ink300, fontSize: 11))],
             ],
           ),
         ),
@@ -765,8 +953,10 @@ class _ConnectingOverlay extends StatelessWidget {
         children: [
           const LogoMark(size: 64),
           const SizedBox(height: 18),
-          Text(reconnecting ? 'Reconnecting…' : 'Connecting to $name…',
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+          Text(
+            reconnecting ? 'Reconnecting…' : 'Connecting to $name…',
+            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 6),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -800,18 +990,29 @@ class _WaitingOverlay extends StatelessWidget {
         children: [
           const LogoMark(size: 64),
           const SizedBox(height: 18),
-          const Text('Waiting for someone to join',
-              textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+          const Text(
+            'Waiting for someone to join',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 6),
-          const Text('Share this room code. The call starts as soon as they join.',
-              textAlign: TextAlign.center, style: TextStyle(color: Color(0xFFA8A29E), fontSize: 13)),
+          const Text(
+            'Share this room code. The call starts as soon as they join.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFFA8A29E), fontSize: 13),
+          ),
           const SizedBox(height: 16),
-          SelectableText(roomCode,
-              style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: 2)),
+          SelectableText(
+            roomCode,
+            style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: 2),
+          ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: onCopy,
-            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white38)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Colors.white38),
+            ),
             icon: const Icon(Icons.copy_rounded, size: 18),
             label: const Text('Copy code'),
           ),
@@ -829,10 +1030,10 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: EdgeInsets.symmetric(horizontal: small ? 6 : 10, vertical: small ? 2 : 5),
-        decoration: BoxDecoration(color: color ?? Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(small ? 5 : 8)),
-        child: child,
-      );
+    padding: EdgeInsets.symmetric(horizontal: small ? 6 : 10, vertical: small ? 2 : 5),
+    decoration: BoxDecoration(color: color ?? Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(small ? 5 : 8)),
+    child: child,
+  );
 }
 
 class _Pill extends StatelessWidget {
@@ -843,20 +1044,63 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-        liveRegion: true,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(999)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 14, color: Colors.white),
-            const SizedBox(width: 6),
-            Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-          ]),
-        ),
-      );
+    liveRegion: true,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 enum _BtnState { normal, off, active, danger }
+
+class _ChatButton extends StatelessWidget {
+  final int unread;
+  final bool active;
+  final VoidCallback onTap;
+  const _ChatButton({required this.unread, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _CallButton(
+          icon: Icons.chat_bubble_outline_rounded,
+          label: unread > 0 ? 'Chat ($unread new)' : 'Chat',
+          state: active ? _BtnState.active : _BtnState.normal,
+          onTap: onTap,
+        ),
+        if (unread > 0)
+          Positioned(
+            right: -4,
+            top: -4,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: Brand.danger, borderRadius: BorderRadius.circular(10)),
+                child: Text(
+                  unread > 9 ? '9+' : '$unread',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
 
 class _CallButton extends StatelessWidget {
   final IconData icon;
@@ -886,7 +1130,11 @@ class _CallButton extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: onTap,
-            child: SizedBox(width: wide ? 64 : 48, height: 48, child: Icon(icon, color: Colors.white, size: 22)),
+            child: SizedBox(
+              width: wide ? 64 : 48,
+              height: 48,
+              child: Icon(icon, color: Colors.white, size: 22),
+            ),
           ),
         ),
       ),

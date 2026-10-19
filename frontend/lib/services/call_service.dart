@@ -5,9 +5,9 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../config/api_config.dart';
 import '../core/app_state.dart';
-import '../core/mock_data.dart';
-import '../models/call_history_entry.dart';
+import '../models/video_filter.dart';
 import 'device_session.dart';
+import 'web_media.dart';
 
 enum ConnectionStateKind { waiting, connecting, connected, reconnecting, unstable, ended }
 
@@ -17,15 +17,15 @@ class CallException implements Exception {
   const CallException(this.code);
 
   String get message => switch (code) {
-        'not_found' => 'No call with this code is active. Check the code with the person who shared it.',
-        'full' => 'This call already has two people in it.',
-        'invalid_room_code' => 'Room codes look like BOLO-4829.',
-        'invalid_language' => 'Choose a supported language and try again.',
-        'media_denied' => 'BoloAI needs your microphone (and camera for video). Allow access in your browser or app settings, then try again.',
-        'unauthorized' || 'session_replaced' || 'session_inactive' || 'session_required' => 'Your sign-in expired. Sign in again to make calls.',
-        'unreachable' => 'Can’t reach the BoloAI server. Check your internet connection and try again.',
-        _ => 'Something went wrong setting up the call ($code).',
-      };
+    'not_found' => 'No call with this code is active. Check the code with the person who shared it.',
+    'full' => 'This call already has two people in it.',
+    'invalid_room_code' => 'Room codes look like BOLO-4829.',
+    'invalid_language' => 'Choose a supported language and try again.',
+    'media_denied' => 'BoloAI needs your microphone (and camera for video). Allow access in your browser or app settings, then try again.',
+    'unauthorized' || 'session_replaced' || 'session_inactive' || 'session_required' => 'Your sign-in expired. Sign in again to make calls.',
+    'unreachable' => 'Can’t reach the BoloAI server. Check your internet connection and try again.',
+    _ => 'Something went wrong setting up the call ($code).',
+  };
 
   @override
   String toString() => 'CallException($code)';
@@ -38,10 +38,18 @@ class CallPeer {
   final String language;
   const CallPeer({required this.uid, required this.name, required this.language});
 
-  factory CallPeer.fromMap(Map m) =>
-      CallPeer(uid: '${m['uid']}', name: '${m['name'] ?? 'BoloAI user'}', language: '${m['language'] ?? 'en'}');
+  factory CallPeer.fromMap(Map m) => CallPeer(uid: '${m['uid']}', name: '${m['name'] ?? 'BoloAI user'}', language: '${m['language'] ?? 'en'}');
 
   CallPeer withLanguage(String language) => CallPeer(uid: uid, name: name, language: language);
+}
+
+/// One line of in-call chat.
+class ChatMessage {
+  final bool mine;
+  final String name;
+  final String text;
+  final DateTime at;
+  const ChatMessage({required this.mine, required this.name, required this.text, required this.at});
 }
 
 /// Camera + microphone, shared between the pre-call preview and the call so
@@ -63,12 +71,17 @@ class LocalMedia {
     },
   };
 
+  /// Why the camera could not start on the last [open], or null if it did.
+  static String? cameraProblem;
+
   /// Opens camera + mic, falling back to mic only when there is no usable camera.
   static Future<MediaStream> open() async {
+    cameraProblem = null;
     try {
       return await navigator.mediaDevices.getUserMedia(_constraints);
     } catch (e) {
       debugPrint('[call] camera+mic unavailable, trying mic only: $e');
+      cameraProblem = describeCameraError(e);
     }
     try {
       return await navigator.mediaDevices.getUserMedia({'audio': _constraints['audio'], 'video': false});
@@ -76,6 +89,24 @@ class LocalMedia {
       debugPrint('[call] microphone unavailable: $e');
       throw const CallException('media_denied');
     }
+  }
+
+  /// Opens just the camera, e.g. to turn it on mid-call after it failed at the start.
+  static Future<MediaStream> openCamera() => navigator.mediaDevices.getUserMedia({'audio': false, 'video': _constraints['video']});
+
+  /// A message the user can act on for a failed camera start.
+  static String describeCameraError(Object e) {
+    final s = e.toString();
+    if (s.contains('NotReadable') || s.contains('TrackStart') || s.contains('Could not start')) {
+      return 'Your camera is being used by another app or browser. Close it there, then tap the camera button.';
+    }
+    if (s.contains('NotAllowed') || s.contains('Permission') || s.contains('denied')) {
+      return 'Camera access is blocked. Allow it in your browser or app settings, then tap the camera button.';
+    }
+    if (s.contains('NotFound') || s.contains('DevicesNotFound') || s.contains('Requested device not found')) {
+      return 'No camera found, so you\u2019re in the call with audio only.';
+    }
+    return 'Your camera couldn\u2019t start, so you\u2019re in the call with audio only.';
   }
 
   /// The stream shown by the pre-call preview (opened on first use).
@@ -113,20 +144,16 @@ class LocalMedia {
 }
 
 /// Starts and joins calls. Only one call runs at a time ([active]).
-///
-/// TODO: Connect backend database — POST /api/calls, GET /api/calls,
-///   PATCH /api/calls/:id/status (routes already exist in backend/).
+/// The backend records each connected call for history (see HistoryStore).
 class CallService {
   /// The call in progress, handed from Start/Join to the call screen.
   static CallSession? active;
 
   /// Creates a room on the signaling server and waits in it for the other person.
-  static Future<CallSession> start({required String language}) =>
-      _open('room:create', {'language': language});
+  static Future<CallSession> start({required String language}) => _open('room:create', {'language': language});
 
   /// Joins the room [roomCode] that someone else created.
-  static Future<CallSession> join(String roomCode, {required String language}) =>
-      _open('room:join', {'roomCode': roomCode, 'language': language});
+  static Future<CallSession> join(String roomCode, {required String language}) => _open('room:join', {'roomCode': roomCode, 'language': language});
 
   static Future<CallSession> _open(String event, Map<String, dynamic> payload) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -165,18 +192,13 @@ class CallService {
   static Future<io.Socket> _connectSocket(User user) async {
     final socket = io.io(
       apiBaseUrl,
-      io.OptionBuilder()
-          .setTransports(['websocket'])
-          .disableAutoConnect()
-          .enableForceNew()
-          .setAuthFn((send) async {
-            try {
-              send({'token': await user.getIdToken(), 'sessionId': DeviceSession.instance.sessionId});
-            } catch (_) {
-              send({'sessionId': DeviceSession.instance.sessionId});
-            }
-          })
-          .build(),
+      io.OptionBuilder().setTransports(['websocket']).disableAutoConnect().enableForceNew().setAuthFn((send) async {
+        try {
+          send({'token': await user.getIdToken(), 'sessionId': DeviceSession.instance.sessionId});
+        } catch (_) {
+          send({'sessionId': DeviceSession.instance.sessionId});
+        }
+      }).build(),
     );
     final ready = Completer<void>();
     socket.onConnect((_) {
@@ -203,13 +225,15 @@ class CallService {
 
   static Future<Map<String, dynamic>> _request(io.Socket socket, String event, [Map<String, dynamic>? payload]) {
     final reply = Completer<Map<String, dynamic>>();
-    socket.emitWithAck(event, payload, ack: (dynamic res) {
-      if (!reply.isCompleted) reply.complete(res is Map ? Map<String, dynamic>.from(res) : {'ok': false, 'error': 'bad_reply'});
-    });
+    socket.emitWithAck(
+      event,
+      payload,
+      ack: (dynamic res) {
+        if (!reply.isCompleted) reply.complete(res is Map ? Map<String, dynamic>.from(res) : {'ok': false, 'error': 'bad_reply'});
+      },
+    );
     return reply.future.timeout(const Duration(seconds: 10), onTimeout: () => throw const CallException('unreachable'));
   }
-
-  Future<List<CallHistoryEntry>> history() async => mockCallHistory;
 }
 
 /// One live call: the signaling socket, the WebRTC peer connection and the
@@ -225,9 +249,9 @@ class CallSession extends ChangeNotifier {
     required this.language,
     required List<Map<String, dynamic>> iceServers,
     required MediaStream localStream,
-  })  : _socket = socket,
-        _iceServers = iceServers,
-        _localStream = localStream;
+  }) : _socket = socket,
+       _iceServers = iceServers,
+       _localStream = localStream;
 
   final String roomCode;
   final String language;
@@ -252,7 +276,42 @@ class CallSession extends ChangeNotifier {
   ConnectionStateKind get state => _state;
 
   bool get hasLocalVideo => _localStream.getVideoTracks().isNotEmpty;
-  bool get hasRemoteVideo => _remoteStream?.getVideoTracks().isNotEmpty ?? false;
+
+  /// Why this call has no camera (shown once when the call screen opens).
+  String? cameraProblem = LocalMedia.cameraProblem;
+
+  /// Sends our video to the other person. Exists even without a camera, so
+  /// turning the camera on later needs no renegotiation (replaceTrack).
+  RTCRtpSender? _videoSender;
+  bool _startingCamera = false;
+
+  /// True when their video is actually arriving: a peer without a camera
+  /// still has a (muted, frameless) video track, and shows their avatar.
+  bool get hasRemoteVideo => (peerCameraOn || peerSharing) && (_remoteStream?.getVideoTracks().any((t) => t.muted != true) ?? false);
+
+  // What the other person told us about their media (see _sendState).
+  bool peerMicOn = true;
+  bool peerCameraOn = true;
+  bool peerSharing = false;
+
+  /// In-call chat, oldest first.
+  final messages = <ChatMessage>[];
+  int unreadChat = 0;
+  bool _chatVisible = false;
+
+  /// The browser blocked their voice until the user taps the page.
+  bool audioBlocked = false;
+
+  /// The raw camera track; with a filter on, the stream carries a filtered copy.
+  MediaStreamTrack? _cameraTrack;
+  FilteredVideo? _filtered;
+  VideoFilter _filter = VideoFilter.none;
+  VideoFilter get filter => _filter;
+  bool get filtersSupported => videoFiltersSupported && hasLocalVideo;
+
+  MediaStream? _screen;
+  bool get sharing => _screen != null;
+  bool get canShareScreen => !_isMobile;
 
   bool _micOn = true;
   bool _cameraOn = true;
@@ -272,9 +331,13 @@ class CallSession extends ChangeNotifier {
     await remoteRenderer.initialize();
     localRenderer.srcObject = _localStream;
 
+    _cameraTrack = _localStream.getVideoTracks().firstOrNull;
     final prefs = AppState.instance.call;
     setMic(prefs.micOn);
-    setCamera(prefs.cameraOn);
+    _cameraOn = prefs.cameraOn && hasLocalVideo;
+    for (final t in _localStream.getVideoTracks()) {
+      t.enabled = _cameraOn;
+    }
     if (_isMobile) {
       // Video calls use the loudspeaker, not the earpiece.
       unawaited(Helper.setSpeakerphoneOn(true).catchError((Object e) => debugPrint('[call] speakerphone: $e')));
@@ -290,6 +353,9 @@ class CallSession extends ChangeNotifier {
       }
     });
     _socket.on('peer:left', (_) => _onPeerLeft());
+    _socket.on('message', (data) {
+      if (data is Map) _onMessage(Map<String, dynamic>.from(data));
+    });
     _socket.onDisconnect((_) => _onSocketLost());
     // The socket is already connected here, so any later connect is a reconnect.
     _socket.onConnect((_) => _rejoin());
@@ -311,6 +377,15 @@ class CallSession extends ChangeNotifier {
     await _resetPeerConnection();
     _isOfferer = true;
     final pc = await _ensurePeerConnection();
+    if (_videoSender == null) {
+      // No camera yet: still offer a video slot so it can be filled later.
+      final t = await pc.addTransceiver(
+        kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+        init: RTCRtpTransceiverInit(direction: TransceiverDirection.SendRecv),
+      );
+      _videoSender = t.sender;
+      await _updateVideoSender();
+    }
     final offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     _send('offer', offer.toMap());
@@ -331,6 +406,10 @@ class CallSession extends ChangeNotifier {
           final pc = await _ensurePeerConnection();
           await pc.setRemoteDescription(RTCSessionDescription(data['sdp'] as String?, data['type'] as String?));
           await _remoteDescriptionReady();
+          if (_videoSender == null) {
+            await _claimVideoSlot(pc);
+            await _updateVideoSender();
+          }
           final answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           _send('answer', answer.toMap());
@@ -372,9 +451,61 @@ class CallSession extends ChangeNotifier {
     if (_closed) return;
     final name = _peer?.name ?? 'The other person';
     _peer = null;
+    peerMicOn = true;
+    peerCameraOn = true;
+    peerSharing = false;
     unawaited(_resetPeerConnection());
     _notices.add('$name left the call.');
     _setState(ConnectionStateKind.waiting);
+  }
+
+  // ---- In-call messages ----
+
+  void _onMessage(Map<String, dynamic> m) {
+    if (_closed) return;
+    switch (m['kind']) {
+      case 'chat':
+        final name = '${m['name'] ?? _peer?.name ?? 'Them'}';
+        messages.add(ChatMessage(mine: false, name: name, text: '${m['text']}', at: DateTime.now()));
+        if (!_chatVisible) {
+          unreadChat++;
+          _notices.add('$name: ${m['text']}');
+        }
+      case 'state':
+        final s = m['state'];
+        if (s is Map) {
+          peerMicOn = s['mic'] == true;
+          peerCameraOn = s['camera'] == true;
+          peerSharing = s['sharing'] == true;
+        }
+    }
+    notifyListeners();
+  }
+
+  void sendChat(String text) {
+    final t = text.trim();
+    if (t.isEmpty || _closed) return;
+    messages.add(ChatMessage(mine: true, name: 'You', text: t, at: DateTime.now()));
+    _socket.emitWithAck('message', {'kind': 'chat', 'text': t}, ack: (_) {});
+    notifyListeners();
+  }
+
+  /// The chat panel is open: new messages count as read.
+  void setChatVisible(bool visible) {
+    _chatVisible = visible;
+    if (visible && unreadChat > 0) {
+      unreadChat = 0;
+      notifyListeners();
+    }
+  }
+
+  /// Tells the other side our mic/camera/sharing state for their screen.
+  void _sendState() {
+    if (_closed || _peer == null) return;
+    _socket.emitWithAck('message', {
+      'kind': 'state',
+      'state': {'mic': _micOn, 'camera': _cameraOn && hasLocalVideo, 'sharing': sharing},
+    }, ack: (_) {});
   }
 
   /// The signaling link dropped. The peer-to-peer media may still be fine,
@@ -386,8 +517,10 @@ class CallSession extends ChangeNotifier {
 
   Future<void> _rejoin() async {
     if (_closed) return;
-    final reply = await CallService._request(_socket, 'room:join', {'roomCode': roomCode, 'language': language})
-        .catchError((Object _) => <String, dynamic>{'ok': false, 'error': 'unreachable'});
+    final reply = await CallService._request(_socket, 'room:join', {
+      'roomCode': roomCode,
+      'language': language,
+    }).catchError((Object _) => <String, dynamic>{'ok': false, 'error': 'unreachable'});
     if (_closed) return;
     if (reply['ok'] != true) {
       // Everyone left while we were offline, so the room is gone.
@@ -424,19 +557,43 @@ class CallSession extends ChangeNotifier {
     _pc = pc;
 
     for (final track in _localStream.getTracks()) {
-      await pc.addTrack(track, _localStream);
+      final sender = await pc.addTrack(track, _localStream);
+      if (track.kind == 'video') _videoSender = sender;
     }
+    await _updateVideoSender();
 
     pc.onIceCandidate = (c) {
       if (c.candidate == null) return;
       _send('ice-candidate', c.toMap() as Map<String, dynamic>);
     };
 
-    pc.onTrack = (event) {
-      if (event.streams.isEmpty) return;
-      _remoteStream = event.streams.first;
+    pc.onTrack = (event) async {
+      if (_pc != pc) return;
+      final track = event.track;
+      // Re-render when their video starts or stops sending frames (e.g. their
+      // camera started mid-call).
+      if (track.kind == 'video') {
+        track.onMute = notifyListeners;
+        track.onUnMute = notifyListeners;
+      }
+      if (event.streams.isNotEmpty) {
+        final stream = event.streams.first;
+        if (_remoteStream != null && _remoteStream!.id != stream.id) {
+          // Carry over tracks that arrived without a stream (see below).
+          for (final t in _remoteStream!.getTracks()) {
+            if (!stream.getTracks().any((s) => s.id == t.id)) await _safeAddTrack(stream, t);
+          }
+        }
+        _remoteStream = stream;
+      } else {
+        // Video sent from a slot that had no camera at the start carries no
+        // stream id: put it with their other tracks.
+        final stream = _remoteStream ??= await createLocalMediaStream('remote');
+        await _safeAddTrack(stream, track);
+      }
       remoteRenderer.srcObject = _remoteStream;
       _applySpeaker();
+      if (track.kind == 'audio') await _playRemoteAudio();
       notifyListeners();
     };
 
@@ -445,6 +602,7 @@ class CallSession extends ChangeNotifier {
       switch (s) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
+          if (_state != ConnectionStateKind.connected) _sendState();
           _setState(ConnectionStateKind.connected);
         case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
           // Usually a brief network blip; WebRTC recovers by itself.
@@ -471,9 +629,56 @@ class CallSession extends ChangeNotifier {
     }
   }
 
+  Future<void> _playRemoteAudio() async {
+    final blocked = !await playRemoteAudio(remoteRenderer);
+    if (blocked != audioBlocked) {
+      audioBlocked = blocked;
+      notifyListeners();
+    }
+  }
+
+  /// Call from a tap: browsers allow sound to start after a user gesture.
+  Future<void> unlockAudio() => _playRemoteAudio();
+
+  /// Puts the right picture on the video sender: the screen while sharing,
+  /// else the (possibly filtered) camera, or nothing while the camera is off.
+  Future<void> _updateVideoSender() async {
+    final sender = _videoSender;
+    if (sender == null) return;
+    final camera = _localStream.getVideoTracks().firstOrNull;
+    final MediaStreamTrack? track = _screen?.getVideoTracks().firstOrNull ?? (_cameraOn ? camera : null);
+    try {
+      await sender.replaceTrack(track);
+    } catch (e) {
+      debugPrint('[call] video sender: $e');
+    }
+  }
+
+  Future<void> _safeAddTrack(MediaStream stream, MediaStreamTrack track) async {
+    try {
+      await stream.addTrack(track);
+    } catch (e) {
+      debugPrint('[call] could not attach remote ${track.kind} track: $e');
+    }
+  }
+
+  /// Answering without a camera: take over the video slot from the offer so
+  /// we can send video once the camera starts.
+  Future<void> _claimVideoSlot(RTCPeerConnection pc) async {
+    if (_videoSender != null) return;
+    for (final t in await pc.getTransceivers()) {
+      if (t.receiver.track?.kind == 'video') {
+        await t.setDirection(TransceiverDirection.SendRecv);
+        _videoSender = t.sender;
+        return;
+      }
+    }
+  }
+
   Future<void> _resetPeerConnection() async {
     final pc = _pc;
     _pc = null;
+    _videoSender = null;
     _remoteDescriptionSet = false;
     _pendingCandidates.clear();
     _remoteStream = null;
@@ -488,15 +693,143 @@ class CallSession extends ChangeNotifier {
     for (final t in _localStream.getAudioTracks()) {
       t.enabled = on;
     }
+    _sendState();
     notifyListeners();
   }
 
   void setCamera(bool on) {
+    if (on && !hasLocalVideo) {
+      _startCamera();
+      return;
+    }
     _cameraOn = on;
     for (final t in _localStream.getVideoTracks()) {
       t.enabled = on;
     }
+    // Stop sending video while off, so the other side shows our avatar
+    // instead of a black picture.
+    _updateVideoSender();
+    _sendState();
     notifyListeners();
+  }
+
+  // ---- Filters (browser) ----
+
+  Future<void> setFilter(VideoFilter f) async {
+    if (!videoFiltersSupported) {
+      _notices.add('Filters are available in the browser version for now.');
+      return;
+    }
+    _filter = f;
+    notifyListeners();
+    await _applyFilter();
+  }
+
+  /// Swaps the stream's video between the raw camera and a filtered copy.
+  Future<void> _applyFilter() async {
+    final camera = _cameraTrack;
+    if (camera == null || _closed) return;
+    final MediaStreamTrack next;
+    try {
+      if (_filter == VideoFilter.none) {
+        if (_filtered == null) return;
+        next = camera;
+      } else if (_filtered != null) {
+        _filtered!.filter = _filter;
+        return;
+      } else {
+        // The canvas draws the raw camera, so it must stay enabled.
+        camera.enabled = true;
+        _filtered = await FilteredVideo.start(camera, _filter);
+        next = _filtered!.track;
+      }
+    } catch (e) {
+      debugPrint('[call] filter failed: $e');
+      _notices.add('That filter couldn\u2019t start on this device.');
+      _filter = VideoFilter.none;
+      notifyListeners();
+      return;
+    }
+    for (final t in List.of(_localStream.getVideoTracks())) {
+      if (t.id != next.id) await _localStream.removeTrack(t);
+    }
+    if (!_localStream.getVideoTracks().any((t) => t.id == next.id)) await _localStream.addTrack(next);
+    next.enabled = _cameraOn;
+    if (_filter == VideoFilter.none) {
+      final old = _filtered;
+      _filtered = null;
+      await old?.dispose();
+    }
+    localRenderer.srcObject = _localStream;
+    await _updateVideoSender();
+    notifyListeners();
+  }
+
+  // ---- Screen sharing ----
+
+  Future<void> toggleScreenShare() async {
+    if (sharing) return _stopSharing();
+    if (_isMobile) {
+      _notices.add('Screen sharing is available on computers for now.');
+      return;
+    }
+    if (_peer == null || _videoSender == null) {
+      _notices.add('Screen sharing can start once someone has joined the call.');
+      return;
+    }
+    try {
+      final screen = await navigator.mediaDevices.getDisplayMedia({'video': true, 'audio': false});
+      final track = screen.getVideoTracks().first;
+      // The browser's own "Stop sharing" button ends the track.
+      track.onEnded = () => _stopSharing();
+      _screen = screen;
+      await _updateVideoSender();
+      _sendState();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[call] screen share: $e');
+      _notices.add('Screen sharing didn\u2019t start.');
+    }
+  }
+
+  Future<void> _stopSharing() async {
+    final screen = _screen;
+    if (screen == null) return;
+    _screen = null;
+    await _updateVideoSender();
+    await LocalMedia.stop(screen);
+    _sendState();
+    if (!_closed) notifyListeners();
+  }
+
+  /// Tries the camera again (it was busy, blocked or missing when the call
+  /// started) and sends it to the other person.
+  Future<void> _startCamera() async {
+    if (_startingCamera || _closed) return;
+    _startingCamera = true;
+    try {
+      final camera = await LocalMedia.openCamera();
+      final track = camera.getVideoTracks().first;
+      if (_closed) {
+        await track.stop();
+        return;
+      }
+      await _localStream.addTrack(track);
+      _cameraTrack = track;
+      localRenderer.srcObject = _localStream;
+      cameraProblem = null;
+      _cameraOn = true;
+      if (_filter != VideoFilter.none) await _applyFilter();
+      await _updateVideoSender();
+      _sendState();
+    } catch (e) {
+      debugPrint('[call] camera still unavailable: $e');
+      _cameraOn = false;
+      if (!_closed) _notices.add(LocalMedia.describeCameraError(e));
+    } finally {
+      _startingCamera = false;
+      if (!_closed) notifyListeners();
+    }
   }
 
   /// Mutes or unmutes what you hear from the other person.
@@ -541,6 +874,12 @@ class CallSession extends ChangeNotifier {
     }
     _socket.dispose();
     await _resetPeerConnection();
+    final screen = _screen;
+    _screen = null;
+    if (screen != null) await LocalMedia.stop(screen);
+    await _filtered?.dispose();
+    _filtered = null;
+    await _cameraTrack?.stop();
     await LocalMedia.stop(_localStream);
     localRenderer.srcObject = null;
     await localRenderer.dispose();

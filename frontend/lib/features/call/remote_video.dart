@@ -16,7 +16,10 @@ class RemoteVideo extends StatefulWidget {
   final bool speaking;
   final RTCVideoRenderer? renderer;
   final bool hasVideo;
-  const RemoteVideo({super.key, required this.contact, this.speaking = false, this.renderer, this.hasVideo = false});
+
+  /// Show the whole picture (a shared screen) instead of filling the frame.
+  final bool contain;
+  const RemoteVideo({super.key, required this.contact, this.speaking = false, this.renderer, this.hasVideo = false, this.contain = false});
 
   @override
   State<RemoteVideo> createState() => _RemoteVideoState();
@@ -65,7 +68,10 @@ class _RemoteVideoState extends State<RemoteVideo> {
     if (widget.renderer != null && widget.hasVideo) {
       content = Container(
         color: const Color(0xFF1C1917),
-        child: RTCVideoView(widget.renderer!, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
+        child: RTCVideoView(
+          widget.renderer!,
+          objectFit: widget.contain ? RTCVideoViewObjectFit.RTCVideoViewObjectFitContain : RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+        ),
       );
     } else if (c != null && c.value.isInitialized) {
       content = FittedBox(

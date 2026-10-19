@@ -2,6 +2,7 @@ import http from 'http';
 import type { AddressInfo } from 'net';
 import { io as connect, Socket } from 'socket.io-client';
 import { attachSignaling, TokenVerifier } from '../src/websocket/signaling';
+import type { CallRecorder } from '../src/websocket/callRecorder';
 
 // Stand-in for Firebase Admin: tokens look like "valid:<uid>:<name>".
 const fakeVerifier: TokenVerifier = async (token) => {
@@ -15,9 +16,25 @@ let url: string;
 let closeIo: () => void;
 const clients: Socket[] = [];
 
+// Stand-in for the database: remembers what the server recorded.
+let recorded: string[] = [];
+const fakeRecorder: CallRecorder = {
+  async started(c) {
+    recorded.push(`started ${c.callerUid}(${c.callerLanguage}) -> ${c.receiverUid}(${c.receiverLanguage})`);
+    return 'call-1';
+  },
+  async resumed(id) {
+    recorded.push(`resumed ${id}`);
+  },
+  async ended(id) {
+    recorded.push(`ended ${id}`);
+  },
+};
+
 beforeEach(async () => {
   server = http.createServer();
-  const { io } = attachSignaling(server, { verifyToken: fakeVerifier });
+  recorded = [];
+  const { io } = attachSignaling(server, { verifyToken: fakeVerifier, calls: fakeRecorder });
   closeIo = () => io.close();
   await new Promise<void>((resolve) => server.listen(0, resolve));
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -112,4 +129,41 @@ describe('signaling server', () => {
     b.disconnect();
     expect(await left).toEqual({ uid: 'u2' });
   });
+
+  test('relays chat and media state to the other participant only', async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    const { roomCode } = await emit(a, 'room:create', { language: 'hi' });
+    await emit(b, 'room:join', { roomCode, language: 'en' });
+
+    const chat = next(b, 'message');
+    expect(await emit(a, 'message', { kind: 'chat', text: '  namaste  ' })).toEqual({ ok: true });
+    expect(await chat).toMatchObject({ kind: 'chat', text: 'namaste', from: 'u1', name: 'A' });
+
+    const state = next(a, 'message');
+    await emit(b, 'message', { kind: 'state', state: { mic: false, camera: true, sharing: 'yes', extra: 1 } });
+    expect(await state).toMatchObject({ kind: 'state', state: { mic: false, camera: true, sharing: false }, from: 'u2' });
+
+    expect(await emit(a, 'message', { kind: 'chat', text: '   ' })).toEqual({ ok: false, error: 'invalid_message' });
+  });
+
+  test('records a call when both people are in the room, and continues it after a reconnect', async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    const { roomCode } = await emit(a, 'room:create', { language: 'hi' });
+    expect(recorded).toEqual([]);
+
+    await emit(b, 'room:join', { roomCode, language: 'en' });
+    await waitFor(() => recorded.length === 1);
+    expect(recorded).toEqual(['started u1(hi) -> u2(en)']);
+
+    await emit(b, 'room:leave');
+    await waitFor(() => recorded.length === 2);
+    await emit(b, 'room:join', { roomCode, language: 'en' });
+    await waitFor(() => recorded.length === 3);
+    expect(recorded.slice(1)).toEqual(['ended call-1', 'resumed call-1']);
+  });
 });
+
+async function waitFor(condition: () => boolean) {
+  for (let i = 0; i < 100 && !condition(); i++) await new Promise((r) => setTimeout(r, 10));
+  expect(condition()).toBe(true);
+}
