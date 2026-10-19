@@ -82,7 +82,7 @@ const mockStats = [
   DashboardStat('Total calls', '128', '+12 this week', 1),
   DashboardStat('Call minutes', '1,942', '+8.4% vs last week', 1),
   DashboardStat('Languages used', '5', 'Hindi most used', 0),
-  DashboardStat('Translation sessions', '96', '3 fewer than last week', -1),
+  DashboardStat('People talked to', '23', '+2 this week', 1),
 ];
 
 /// Call minutes per weekday (Mon → Sun) for the dashboard chart.

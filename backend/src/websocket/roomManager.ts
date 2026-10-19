@@ -75,6 +75,11 @@ export class RoomManager {
     return code ? this.rooms.get(code)?.get(socketId) : undefined;
   }
 
+  /// Everyone in [roomCode], in the order they joined (the creator first).
+  participants(roomCode: string): Participant[] {
+    return [...(this.rooms.get(roomCode)?.values() ?? [])];
+  }
+
   /// Everyone else in the same room as [socketId].
   peersOf(socketId: string): Participant[] {
     const code = this.roomBySocket.get(socketId);

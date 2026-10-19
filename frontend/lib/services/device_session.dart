@@ -27,6 +27,10 @@ class DeviceSession {
   /// Called when another device signed in to this account.
   VoidCallback? onRevoked;
 
+  /// True once this device holds the account and may call the REST API
+  /// (the backend refuses other devices with session_inactive).
+  final ready = ValueNotifier<bool>(false);
+
   String? _sessionId;
   bool _freshSignIn = false;
   User? _user;
@@ -74,6 +78,7 @@ class DeviceSession {
     _socket?.dispose();
     _socket = null;
     _user = null;
+    ready.value = false;
   }
 
   /// Frees the account on the backend before signing out.
@@ -140,6 +145,9 @@ class DeviceSession {
     _socket = socket;
 
     socket.on('session:revoked', (_) => _revoked(gen));
+    socket.onConnect((_) {
+      if (gen == _generation) ready.value = true;
+    });
 
     socket.onConnectError((err) {
       if (gen != _generation) return;

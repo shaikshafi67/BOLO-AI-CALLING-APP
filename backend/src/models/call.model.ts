@@ -7,9 +7,13 @@ export interface Call {
   status: CallStatus;
   startedAt: Date;
   endedAt: Date | null;
+  roomCode: string | null;
+  callerLanguage: string | null;
+  receiverLanguage: string | null;
 }
 
 export interface CallHistoryEntry extends Call {
+  participantId: string;
   participantName: string;
   direction: 'incoming' | 'outgoing';
 }

@@ -69,8 +69,12 @@ Possible errors: `invalid_language`, `invalid_room_code`, `not_found`, `full`
 
 ## Notes
 
-- Rooms live in memory and disappear when both people leave. Call records are
-  saved separately through `POST /api/calls`.
+- Rooms live in memory and disappear when both people leave.
+- Call history: when the second person joins a room, the server records a call
+  (room code, both people, the language each speaks) and marks it ended when
+  someone leaves. If the same two people reconnect to the room, the same call
+  continues. Both people need a profile (`POST /api/users`, which the app creates
+  on sign-in); otherwise the call is not recorded. History is read with `GET /api/calls`.
 - For calls between different networks (e.g. mobile data ↔ Wi-Fi) the apps also
   need a TURN server; its details go in `TURN_SERVER_URL` (comma-separate several
   URLs), `TURN_USERNAME` and `TURN_PASSWORD` in `backend/.env`. Without one, calls

@@ -4,9 +4,9 @@ import '../../config/supported_languages.dart';
 import '../../core/app_state.dart';
 import '../../core/formatters.dart';
 import '../../core/media.dart';
-import '../../core/mock_data.dart';
 import '../../core/theme.dart';
 import '../../models/user.dart';
+import '../../services/history_store.dart';
 import '../../services/session.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/common.dart';
@@ -18,7 +18,12 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 700;
-    final online = mockContacts.where((c) => c.presence == Presence.online).toList();
+    return ListenableBuilder(listenable: HistoryStore.instance, builder: (context, _) => _build(context, wide));
+  }
+
+  Widget _build(BuildContext context, bool wide) {
+    final store = HistoryStore.instance;
+    final online = kDemoMode ? store.people.where((c) => c.presence == Presence.online).toList() : store.people;
 
     return ListView(
       padding: EdgeInsets.fromLTRB(wide ? 28 : 16, wide ? 28 : 8, wide ? 28 : 16, 32),
@@ -68,11 +73,10 @@ class DashboardScreen extends StatelessWidget {
               ],
               const SizedBox(height: 22),
               _RecentCalls(),
-              const SizedBox(height: 20),
-              const PrototypeNotice(
-                title: 'Sample data.',
-                message: 'Statistics and call history here are mock data until the BoloAI backend database is connected.',
-              ),
+              if (kDemoMode) ...[
+                const SizedBox(height: 20),
+                const PrototypeNotice(title: 'Sample data.', message: 'Demo mode shows made-up statistics and call history.'),
+              ],
             ],
           ),
         ),
@@ -190,10 +194,11 @@ class _StatsGrid extends StatelessWidget {
   final bool wide;
   const _StatsGrid({required this.wide});
 
-  static const _icons = [Icons.call_outlined, Icons.schedule_rounded, Icons.translate_rounded, Icons.closed_caption_outlined];
+  static const _icons = [Icons.call_outlined, Icons.schedule_rounded, Icons.translate_rounded, Icons.people_outline_rounded];
 
   @override
   Widget build(BuildContext context) {
+    final mockStats = HistoryStore.instance.stats;
     final cards = [
       for (var i = 0; i < mockStats.length; i++)
         AppCard(
@@ -253,24 +258,28 @@ class _WeeklyChart extends StatefulWidget {
 
 class _WeeklyChartState extends State<_WeeklyChart> {
   int? _selected;
-  static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   @override
   Widget build(BuildContext context) {
-    final total = mockWeeklyMinutes.reduce((a, b) => a + b);
-    const ceiling = 100;
+    final week = HistoryStore.instance.weeklyMinutes;
+    final days = week.labels;
+    final minutes = week.minutes;
+    final total = minutes.reduce((a, b) => a + b);
+    final peak = minutes.reduce((a, b) => a > b ? a : b);
+    // Round the scale up so short calls still show as small bars.
+    final ceiling = peak <= 10 ? 10 : ((peak / 10).ceil() * 10);
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Call minutes this week', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          Text(kDemoMode ? 'Call minutes this week' : 'Call minutes, last 7 days', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
           const SizedBox(height: 2),
-          Text(_selected == null ? '$total minutes total' : '${_days[_selected!]}: ${mockWeeklyMinutes[_selected!]} minutes',
+          Text(_selected == null ? '$total minutes total' : '${days[_selected!]}: ${minutes[_selected!]} minutes',
               style: TextStyle(color: context.colors.muted, fontSize: 13)),
           const SizedBox(height: 16),
           Semantics(
             label: 'Bar chart of call minutes per day: '
-                '${[for (var i = 0; i < 7; i++) '${_days[i]} ${mockWeeklyMinutes[i]}'].join(', ')}',
+                '${[for (var i = 0; i < 7; i++) '${days[i]} ${minutes[i]}'].join(', ')}',
             child: SizedBox(
               height: 150,
               child: Row(
@@ -291,7 +300,7 @@ class _WeeklyChartState extends State<_WeeklyChart> {
                                 child: Align(
                                   alignment: Alignment.bottomCenter,
                                   child: FractionallySizedBox(
-                                    heightFactor: mockWeeklyMinutes[i] / ceiling,
+                                    heightFactor: minutes[i] / ceiling,
                                     child: AnimatedContainer(
                                       duration: const Duration(milliseconds: 150),
                                       width: 26,
@@ -304,7 +313,7 @@ class _WeeklyChartState extends State<_WeeklyChart> {
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              Text(_days[i], style: TextStyle(fontSize: 11, color: context.colors.subtle)),
+                              Text(days[i], style: TextStyle(fontSize: 11, color: context.colors.subtle)),
                             ],
                           ),
                         ),
@@ -332,15 +341,23 @@ class _OnlineNow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Expanded(child: Text('Online now', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
+            Expanded(child: Text(kDemoMode ? 'Online now' : 'Recent people', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
             TextButton(onPressed: () => context.go('/contacts'), child: const Text('All contacts')),
           ]),
+          if (contacts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 8, 10, 12),
+              child: Text('People you call will appear here.', style: TextStyle(fontSize: 13, color: context.colors.muted)),
+            ),
           for (final c in contacts.take(4))
             ListTile(
               contentPadding: const EdgeInsets.only(right: 4),
-              leading: Avatar(name: c.name, size: 38, presence: c.presence),
+              leading: Avatar(name: c.name, size: 38, presence: kDemoMode ? c.presence : null),
               title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              subtitle: Text(c.location ?? '', style: TextStyle(fontSize: 12, color: context.colors.subtle)),
+              subtitle: Text(
+                kDemoMode ? c.location ?? '' : c.lastCallAt == null ? '' : 'Last call ${formatRelative(c.lastCallAt!)}',
+                style: TextStyle(fontSize: 12, color: context.colors.subtle),
+              ),
               trailing: IconButton(
                 tooltip: 'Call ${c.firstName}',
                 icon: Icon(Icons.videocam_outlined, color: context.brand),
@@ -356,6 +373,7 @@ class _OnlineNow extends StatelessWidget {
 class _RecentCalls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final recent = HistoryStore.instance.calls.take(5).toList();
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -368,9 +386,14 @@ class _RecentCalls extends StatelessWidget {
             ]),
           ),
           const Divider(),
-          for (final call in mockCallHistory.take(5)) ...[
+          if (recent.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('No calls yet. Start one, or join with a room code.', style: TextStyle(color: context.colors.muted)),
+            ),
+          for (final call in recent) ...[
             CallRow(call: call, onTap: () => context.go('/start-call?contact=${call.contactId}')),
-            if (call != mockCallHistory.take(5).last) const Divider(indent: 70),
+            if (call != recent.last) const Divider(indent: 70),
           ],
         ],
       ),

@@ -48,7 +48,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _saving = true);
     try {
       if (!kDemoMode) await AuthService().updateDisplayName(name);
-      // TODO: Connect backend database — PATCH /api/users/me/language.
+      // The language is also saved to the backend profile (PATCH /api/users/me/language).
       Session.instance
         ..setNameLocally(name)
         ..setPreferredLanguage(_language);

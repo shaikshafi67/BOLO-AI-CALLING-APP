@@ -6,6 +6,7 @@
 *.key
 service-account*.json
 google-credentials*.json
+backend/secrets/
 
 # Node / backend
 backend/node_modules/

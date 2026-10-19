@@ -61,6 +61,7 @@ export const userController = {
       return;
     }
     const users = await userService.search(query, req.firebaseUid!);
-    res.json(users);
+    // Only what other people need to see: no email or Firebase uid.
+    res.json(users.map(({ id, name, preferredLanguage, avatarUrl }) => ({ id, name, preferredLanguage, avatarUrl })));
   },
 };

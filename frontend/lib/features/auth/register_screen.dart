@@ -56,18 +56,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _errorMessage = null;
     });
 
+    Session.instance.beginRegistration();
     try {
       await _authService.register(email: _emailController.text.trim(), password: _passwordController.text);
       await _authService.updateDisplayName(_nameController.text.trim());
-      Session.instance
-        ..refresh()
-        ..setPreferredLanguage(_preferredLanguage);
+      Session.instance.setPreferredLanguage(_preferredLanguage);
       AppState.instance.call.update(myLanguage: _preferredLanguage);
-      // TODO: Connect backend database — POST /api/users { name, preferredLanguage }
-      // once the backend's Firebase Admin keys are configured (see UserService).
+      // Creates the backend profile (POST /api/users) with this name and language.
+      await Session.instance.finishRegistration();
       if (!mounted) return;
       context.go('/home');
     } on AuthFailure catch (e) {
+      Session.instance.cancelRegistration();
       setState(() => _errorMessage = e.message);
     } finally {
       if (mounted) setState(() => _isLoading = false);

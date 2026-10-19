@@ -3,9 +3,10 @@ import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
 import '../../core/app_state.dart';
 import '../../core/formatters.dart';
-import '../../core/mock_data.dart';
+import '../../models/user.dart';
 import '../../core/theme.dart';
 import '../../services/call_service.dart';
+import '../../services/history_store.dart';
 import '../../services/session.dart';
 import '../../widgets/common.dart';
 import 'pre_call_widgets.dart';
@@ -21,6 +22,22 @@ class StartCallScreen extends StatefulWidget {
 class _StartCallScreenState extends State<StartCallScreen> {
   late String _contactId = widget.contactId ?? '';
   bool _starting = false;
+
+  /// People to pick from: everyone you've called, plus whoever this call was opened for.
+  List<AppUser> get _people {
+    final store = HistoryStore.instance;
+    final people = [...store.people];
+    final picked = store.personById(_contactId);
+    if (picked != null && !people.any((p) => p.id == picked.id)) people.insert(0, picked);
+    return people;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Unknown contact id (e.g. an old link): fall back to "anyone".
+    if (_contactId.isNotEmpty && HistoryStore.instance.personById(_contactId) == null) _contactId = '';
+  }
 
   Future<void> _start() async {
     setState(() => _starting = true);
@@ -73,7 +90,7 @@ class _StartCallScreenState extends State<StartCallScreen> {
                 decoration: const InputDecoration(prefixIcon: Icon(Icons.person_outline_rounded, size: 20)),
                 items: [
                   const DropdownMenuItem(value: '', child: Text('Anyone with the room code')),
-                  for (final c in mockContacts)
+                  for (final c in _people)
                     DropdownMenuItem(value: c.id, child: Text('${c.name} · speaks ${languageFor(c.preferredLanguage).label}', overflow: TextOverflow.ellipsis)),
                 ],
                 onChanged: (v) => setState(() => _contactId = v ?? ''),

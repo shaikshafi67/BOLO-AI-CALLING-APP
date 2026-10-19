@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
@@ -5,6 +6,9 @@ import '../../core/formatters.dart';
 import '../../core/mock_data.dart';
 import '../../core/theme.dart';
 import '../../models/user.dart';
+import '../../services/api_client.dart';
+import '../../services/history_store.dart';
+import '../../services/session.dart';
 import '../../services/user_service.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/common.dart';
@@ -17,17 +21,75 @@ class ContactsScreen extends StatefulWidget {
   State<ContactsScreen> createState() => _ContactsScreenState();
 }
 
+/// Your contacts are the people you've had calls with (from call history).
+/// Searching also looks up everyone registered on BoloAI (GET /api/users/search).
 class _ContactsScreenState extends State<ContactsScreen> {
-  // TODO: Connect backend database — contacts endpoints don't exist yet;
-  // GET /api/users/search?q= already does people search.
-  late List<AppUser> _contacts = [...mockContacts];
+  final _store = HistoryStore.instance;
+  List<AppUser> _demoContacts = [...mockContacts];
+  List<AppUser> get _contacts => kDemoMode ? _demoContacts : _store.people;
   late final _search = TextEditingController(text: widget.initialQuery ?? '');
   bool _onlineOnly = false;
 
+  Timer? _debounce;
+  List<AppUser> _found = const [];
+  bool _searching = false;
+  String? _searchError;
+
+  @override
+  void initState() {
+    super.initState();
+    _store.addListener(_onStore);
+    if (_search.text.isNotEmpty) _lookUp();
+  }
+
   @override
   void dispose() {
+    _store.removeListener(_onStore);
+    _debounce?.cancel();
     _search.dispose();
     super.dispose();
+  }
+
+  void _onStore() {
+    if (mounted) setState(() {});
+  }
+
+  void _onQueryChanged(String _) {
+    setState(() {});
+    if (kDemoMode) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), _lookUp);
+  }
+
+  Future<void> _lookUp() async {
+    final q = _search.text.trim();
+    if (q.length < 2) {
+      setState(() {
+        _found = const [];
+        _searchError = null;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    try {
+      final results = await UserService().search(q);
+      if (!mounted || _search.text.trim() != q) return;
+      results.forEach(_store.remember);
+      setState(() {
+        _found = results;
+        _searchError = null;
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _searchError = e.code == 'unreachable' ? 'Can’t reach the BoloAI server.' : 'Search failed (${e.code}).');
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  /// Search results who aren't already in your contacts.
+  List<AppUser> get _others {
+    final known = _contacts.map((c) => c.id).toSet();
+    return _found.where((u) => !known.contains(u.id)).toList();
   }
 
   List<AppUser> get _visible {
@@ -48,15 +110,15 @@ class _ContactsScreenState extends State<ContactsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Avatar(name: c.name, size: 84, presence: c.presence),
+              Avatar(name: c.name, size: 84, presence: kDemoMode ? c.presence : null),
               const SizedBox(height: 12),
               Text(c.name, style: AppTheme.serif(32, color: context.colors.fg)),
-              Text(presenceLabels[c.presence]!, style: TextStyle(color: context.colors.muted)),
+              if (kDemoMode) Text(presenceLabels[c.presence]!, style: TextStyle(color: context.colors.muted)),
               const SizedBox(height: 16),
-              _row(context, Icons.mail_outline_rounded, 'Email', c.email),
+              if (c.email.isNotEmpty) _row(context, Icons.mail_outline_rounded, 'Email', c.email),
               _row(context, Icons.translate_rounded, 'Preferred language',
                   '${languageFor(c.preferredLanguage).label} · ${languageFor(c.preferredLanguage).nativeName}'),
-              _row(context, Icons.place_outlined, 'Location', c.location ?? '—'),
+              if (kDemoMode) _row(context, Icons.place_outlined, 'Location', c.location ?? '—'),
               _row(context, Icons.schedule_rounded, 'Last call', c.lastCallAt == null ? 'No calls yet' : formatRelative(c.lastCallAt!)),
               const SizedBox(height: 16),
               Row(children: [
@@ -142,9 +204,9 @@ class _ContactsScreenState extends State<ContactsScreen> {
     );
     controller.dispose();
     if (email == null) return;
-    final contact = await UserService().addContact(email);
+    final contact = await UserService.demoContact(email);
     if (!mounted) return;
-    setState(() => _contacts = [contact, ..._contacts]);
+    setState(() => _demoContacts = [contact, ..._demoContacts]);
     showToast(context, 'Contact request sent to $email.', icon: Icons.check_circle_outline_rounded);
   }
 
@@ -154,6 +216,9 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final columns = width >= 1100 ? 3 : (width >= 700 ? 2 : 1);
     final online = _contacts.where((c) => c.presence == Presence.online).length;
+    final others = _others;
+    final query = _search.text.trim();
+    final searchable = !kDemoMode && query.length >= 2;
 
     return ListView(
       padding: EdgeInsets.all(width >= 700 ? 28 : 16),
@@ -164,16 +229,25 @@ class _ContactsScreenState extends State<ContactsScreen> {
             children: [
               PageHeader(
                 title: 'Contacts',
-                subtitle: '${_contacts.length} people · $online online now',
-                trailing: width >= 600
+                subtitle: kDemoMode ? '${_contacts.length} people · $online online now' : '${_contacts.length} people you’ve talked to',
+                trailing: !kDemoMode
+                    ? null
+                    : width >= 600
                     ? FilledButton.icon(onPressed: _addContact, icon: const Icon(Icons.person_add_alt_rounded), label: const Text('Add contact'))
                     : IconButton.filled(tooltip: 'Add contact', onPressed: _addContact, icon: const Icon(Icons.person_add_alt_rounded)),
               ),
               TextField(
                 controller: _search,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(hintText: 'Search contacts by name or email', prefixIcon: Icon(Icons.search_rounded)),
+                onChanged: _onQueryChanged,
+                decoration: InputDecoration(
+                  hintText: kDemoMode ? 'Search contacts by name or email' : 'Search contacts, or find anyone on BoloAI by name',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _searching
+                      ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                      : null,
+                ),
               ),
+              if (kDemoMode) ...[
               const SizedBox(height: 10),
               SegmentedButton<bool>(
                 showSelectedIcon: false,
@@ -184,15 +258,32 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 selected: {_onlineOnly},
                 onSelectionChanged: (s) => setState(() => _onlineOnly = s.first),
               ),
+              ],
               const SizedBox(height: 16),
-              if (visible.isEmpty)
+              if (_searchError != null) ...[
+                Text(_searchError!, style: const TextStyle(color: Brand.danger, fontSize: 13)),
+                const SizedBox(height: 10),
+              ],
+              if (visible.isEmpty && !(searchable && others.isNotEmpty))
                 Card(
-                  child: EmptyState(
-                    icon: Icons.people_outline_rounded,
-                    title: _search.text.isEmpty ? 'No contacts online' : 'No contacts match “${_search.text}”',
-                    message: 'Try another search, or add someone new.',
-                    action: OutlinedButton.icon(onPressed: _addContact, icon: const Icon(Icons.person_add_alt_rounded), label: const Text('Add contact')),
-                  ),
+                  child: kDemoMode
+                      ? EmptyState(
+                          icon: Icons.people_outline_rounded,
+                          title: _search.text.isEmpty ? 'No contacts online' : 'No contacts match “${_search.text}”',
+                          message: 'Try another search, or add someone new.',
+                          action: OutlinedButton.icon(onPressed: _addContact, icon: const Icon(Icons.person_add_alt_rounded), label: const Text('Add contact')),
+                        )
+                      : EmptyState(
+                          icon: Icons.people_outline_rounded,
+                          title: query.isEmpty
+                              ? 'No contacts yet'
+                              : _searching
+                                  ? 'Searching…'
+                                  : 'No one matches “$query”',
+                          message: query.isEmpty
+                              ? 'People you have calls with appear here. Search above to find anyone on BoloAI.'
+                              : 'Check the spelling, or search by their name as they registered it.',
+                        ),
                 )
               else
                 LayoutBuilder(builder: (context, box) {
@@ -203,6 +294,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     children: [for (final c in visible) SizedBox(width: itemWidth, child: _ContactCard(contact: c, onMessage: _message, onProfile: _viewProfile))],
                   );
                 }),
+              if (searchable && others.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                Text('Others on BoloAI', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: context.colors.fg)),
+                const SizedBox(height: 10),
+                LayoutBuilder(builder: (context, box) {
+                  final itemWidth = (box.maxWidth - (columns - 1) * 12) / columns;
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [for (final c in others) SizedBox(width: itemWidth, child: _ContactCard(contact: c, onMessage: _message, onProfile: _viewProfile))],
+                  );
+                }),
+              ],
             ],
           ),
         ),
@@ -226,12 +330,12 @@ class _ContactCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Avatar(name: c.name, size: 52, presence: c.presence),
+            Avatar(name: c.name, size: 52, presence: kDemoMode ? c.presence : null),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16), overflow: TextOverflow.ellipsis),
-                Text('${presenceLabels[c.presence]}${c.location == null ? '' : ' · ${c.location}'}',
+                Text(kDemoMode ? '${presenceLabels[c.presence]}${c.location == null ? '' : ' · ${c.location}'}' : c.email.isNotEmpty ? c.email : 'Speaks ${languageFor(c.preferredLanguage).label}',
                     style: TextStyle(color: context.colors.muted, fontSize: 12), overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 6),
                 StatusBadge(languageFor(c.preferredLanguage).label, tone: Tone.brand, icon: Icons.translate_rounded),

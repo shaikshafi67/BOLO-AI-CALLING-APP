@@ -9,6 +9,9 @@ function rowToCall(row: any): Call {
     status: row.status,
     startedAt: row.started_at,
     endedAt: row.ended_at,
+    roomCode: row.room_code ?? null,
+    callerLanguage: row.caller_language ?? null,
+    receiverLanguage: row.receiver_language ?? null,
   };
 }
 
@@ -19,6 +22,27 @@ export const callService = {
       [callerId, receiverId],
     );
     return rowToCall(result.rows[0]);
+  },
+
+  /// A call that connected in a signaling room (both people joined).
+  async createFromRoom(input: {
+    callerId: string;
+    receiverId: string;
+    roomCode: string;
+    callerLanguage: string;
+    receiverLanguage: string;
+  }): Promise<Call> {
+    const result = await pool.query(
+      `INSERT INTO calls (caller_id, receiver_id, status, room_code, caller_language, receiver_language)
+       VALUES ($1, $2, 'accepted', $3, $4, $5) RETURNING *`,
+      [input.callerId, input.receiverId, input.roomCode, input.callerLanguage, input.receiverLanguage],
+    );
+    return rowToCall(result.rows[0]);
+  },
+
+  /// Continues a call after a dropped connection instead of starting a new one.
+  async reopen(callId: string): Promise<void> {
+    await pool.query(`UPDATE calls SET status = 'accepted', ended_at = NULL WHERE id = $1`, [callId]);
   },
 
   async getById(callId: string): Promise<Call | null> {
@@ -42,6 +66,7 @@ export const callService = {
     const result = await pool.query(
       `SELECT
          c.*,
+         CASE WHEN c.caller_id = $1 THEN receiver.id ELSE caller.id END AS participant_id,
          CASE WHEN c.caller_id = $1 THEN receiver.name ELSE caller.name END AS participant_name,
          CASE WHEN c.caller_id = $1 THEN 'outgoing' ELSE 'incoming' END AS direction
        FROM calls c
@@ -54,6 +79,7 @@ export const callService = {
     );
     return result.rows.map((row: any) => ({
       ...rowToCall(row),
+      participantId: row.participant_id,
       participantName: row.participant_name,
       direction: row.direction,
     }));

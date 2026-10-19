@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
 import '../../core/formatters.dart';
-import '../../core/mock_data.dart';
 import '../../core/theme.dart';
 import '../../models/call_history_entry.dart';
+import '../../services/history_store.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/common.dart';
 import 'call_widgets.dart';
@@ -20,7 +20,7 @@ const _ranges = {'all': ('All time', 100000), '7': ('Last 7 days', 7), '30': ('L
 const _pageSize = 6;
 
 class _CallHistoryScreenState extends State<CallHistoryScreen> {
-  // TODO: Connect backend database — load from GET /api/calls (CallService.history).
+  final _store = HistoryStore.instance;
   String _query = '';
   String _language = 'all';
   String _range = 'all';
@@ -29,7 +29,7 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
   List<CallHistoryEntry> get _filtered {
     final cutoff = DateTime.now().subtract(Duration(days: _ranges[_range]!.$2));
     final q = _query.toLowerCase();
-    return mockCallHistory.where((c) {
+    return _store.calls.where((c) {
       final matchesQuery = q.isEmpty || c.participantName.toLowerCase().contains(q) || c.roomCode.toLowerCase().contains(q);
       final matchesLang = _language == 'all' || c.sourceLanguage == _language || c.targetLanguage == _language;
       return matchesQuery && matchesLang && c.timestamp.isAfter(cutoff);
@@ -67,7 +67,7 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
                 _detail(context, 'Translated lines', '${c.translatedLines}'),
               ]),
               const SizedBox(height: 12),
-              Text('Call transcripts will appear here once the backend stores translation history.',
+              Text('Call transcripts will appear here once live translation is available.',
                   style: TextStyle(fontSize: 12, color: context.colors.subtle)),
               const SizedBox(height: 16),
               FilledButton.icon(
@@ -97,7 +97,15 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
       );
 
   @override
-  Widget build(BuildContext context) {
+  void initState() {
+    super.initState();
+    _store.load();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(listenable: _store, builder: (context, _) => _build(context));
+
+  Widget _build(BuildContext context) {
     final filtered = _filtered;
     final pages = (filtered.length / _pageSize).ceil().clamp(1, 999);
     final page = _page.clamp(0, pages - 1);
@@ -111,7 +119,21 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const PageHeader(title: 'Call history', subtitle: 'Every conversation, with the languages you used.'),
+              PageHeader(
+                title: 'Call history',
+                subtitle: 'Every conversation, with the languages you used.',
+                trailing: IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _store.loading ? null : _store.load,
+                  icon: _store.loading
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.refresh_rounded),
+                ),
+              ),
+              if (_store.error != null) ...[
+                Text('${_store.error} Showing the calls loaded earlier.', style: const TextStyle(color: Brand.danger, fontSize: 13)),
+                const SizedBox(height: 10),
+              ],
               TextField(
                 onChanged: (v) => setState(() {
                   _query = v;
@@ -153,7 +175,20 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
               const SizedBox(height: 16),
               Card(
                 clipBehavior: Clip.antiAlias,
-                child: rows.isEmpty
+                child: !_store.loadedOnce
+                    ? const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()))
+                    : _store.calls.isEmpty
+                    ? EmptyState(
+                        icon: Icons.history_rounded,
+                        title: 'No calls yet',
+                        message: 'Calls you make or join will show up here.',
+                        action: FilledButton.icon(
+                          onPressed: () => context.go('/start-call'),
+                          icon: const Icon(Icons.videocam_rounded),
+                          label: const Text('Start a call'),
+                        ),
+                      )
+                    : rows.isEmpty
                     ? EmptyState(
                         icon: Icons.history_rounded,
                         title: 'No calls found',
