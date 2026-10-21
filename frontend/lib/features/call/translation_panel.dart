@@ -173,7 +173,7 @@ class _TranslationPanelState extends State<TranslationPanel> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Scripted Hindi ↔ English demo transcript. Live speech recognition and translation appear here once the AI backend is connected.',
+                  'Live speech recognition and translation will appear here once AI translation is switched on.',
                   style: TextStyle(color: _subtle, fontSize: 11),
                 ),
               ),

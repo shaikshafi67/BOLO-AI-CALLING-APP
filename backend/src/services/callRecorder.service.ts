@@ -25,4 +25,20 @@ export const pgCallRecorder: CallRecorder = {
   async ended(callId) {
     await callService.updateStatus(callId, 'ended');
   },
+  async unanswered(call) {
+    const [caller, receiver] = await Promise.all([
+      userService.getByFirebaseUid(call.callerUid),
+      userService.getByFirebaseUid(call.receiverUid),
+    ]);
+    if (!caller || !receiver || caller.id === receiver.id) return;
+    const created = await callService.createFromRoom({
+      callerId: caller.id,
+      receiverId: receiver.id,
+      roomCode: call.roomCode,
+      callerLanguage: call.callerLanguage,
+      receiverLanguage: receiver.preferredLanguage,
+      status: call.status,
+    });
+    await callService.updateStatus(created.id, call.status);
+  },
 };

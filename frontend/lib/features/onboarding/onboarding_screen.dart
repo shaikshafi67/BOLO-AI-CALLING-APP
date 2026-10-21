@@ -18,7 +18,7 @@ class _Page {
 
 const _pages = [
   _Page(
-    Media.demoCallPoster,
+    Media.callPoster,
     'Real-time video calls',
     'Break language barriers ',
     'in real time.',

@@ -36,17 +36,15 @@ class _JoinCallScreenState extends State<JoinCallScreen> {
       _error = null;
       _joining = true;
     });
-    if (!kDemoMode) {
-      try {
-        await CallService.join(code, language: AppState.instance.call.myLanguage);
-      } on CallException catch (e) {
-        if (!mounted) return;
-        setState(() {
-          _joining = false;
-          _error = e.message;
-        });
-        return;
-      }
+    try {
+      await CallService.join(code, language: AppState.instance.call.myLanguage);
+    } on CallException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _joining = false;
+        _error = e.message;
+      });
+      return;
     }
     if (!mounted) return;
     setState(() => _joining = false);

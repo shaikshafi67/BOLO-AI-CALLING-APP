@@ -34,14 +34,6 @@ class UserService {
     return [for (final r in rows) _fromJson(r as Map)];
   }
 
-  /// Demo mode only: a made-up contact for the "Add contact" dialog.
-  static Future<AppUser> demoContact(String email) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    final raw = email.split('@').first.replaceAll(RegExp(r'[._-]+'), ' ');
-    final name = raw.split(' ').where((p) => p.isNotEmpty).map((p) => p[0].toUpperCase() + p.substring(1)).join(' ');
-    return AppUser(id: 'c_${DateTime.now().millisecondsSinceEpoch}', name: name.isEmpty ? email : name, email: email, preferredLanguage: 'en');
-  }
-
   static AppUser _fromJson(Map j) => AppUser(
         id: '${j['id']}',
         name: '${j['name'] ?? ''}',

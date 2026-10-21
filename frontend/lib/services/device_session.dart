@@ -31,6 +31,19 @@ class DeviceSession {
   /// (the backend refuses other devices with session_inactive).
   final ready = ValueNotifier<bool>(false);
 
+  /// App-wide socket events (e.g. an incoming call), kept across reconnects.
+  final _handlers = <String, void Function(dynamic)>{};
+
+  void onEvent(String event, void Function(dynamic) handler) {
+    _handlers[event] = handler;
+    _socket?.on(event, handler);
+  }
+
+  /// Sends an event on this device's socket (no-op while disconnected).
+  void emit(String event, Map<String, dynamic> data) {
+    _socket?.emitWithAck(event, data, ack: (_) {});
+  }
+
   String? _sessionId;
   bool _freshSignIn = false;
   User? _user;
@@ -145,6 +158,7 @@ class DeviceSession {
     _socket = socket;
 
     socket.on('session:revoked', (_) => _revoked(gen));
+    _handlers.forEach(socket.on);
     socket.onConnect((_) {
       if (gen == _generation) ready.value = true;
     });

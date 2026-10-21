@@ -75,6 +75,14 @@ export class RoomManager {
     return code ? this.rooms.get(code)?.get(socketId) : undefined;
   }
 
+  /// Whether [uid] is in any call right now (on any device).
+  hasUser(uid: string): boolean {
+    for (const room of this.rooms.values()) {
+      for (const p of room.values()) if (p.uid === uid) return true;
+    }
+    return false;
+  }
+
   /// Everyone in [roomCode], in the order they joined (the creator first).
   participants(roomCode: string): Participant[] {
     return [...(this.rooms.get(roomCode)?.values() ?? [])];

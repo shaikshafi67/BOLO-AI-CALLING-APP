@@ -34,6 +34,9 @@ All of these take an acknowledgement callback that receives `{ ok: true, ... }` 
 | `room:join` | `{ roomCode, language }` | `{ ok, roomCode, peers: [{ uid, name, language }], iceServers }` |
 | `signal` | `{ type: 'offer' \| 'answer' \| 'ice-candidate', data }` | `{ ok }` |
 | `language:update` | `{ language }` | `{ ok }` |
+| `call:invite` | `{ userId }` (a users.id) | `{ ok }` — errors `offline`, `busy`, `not_found`, `self`, `already_ringing` |
+| `call:decline` | `{ roomCode }` | `{ ok }` |
+| `message` | `{ kind: 'chat', text }` or `{ kind: 'state', state: { mic, camera, sharing } }` | `{ ok }` |
 | `room:leave` | — | `{ ok }` |
 
 - `language` must be a supported code: `en`, `hi`, `te`, `ta`.
@@ -55,6 +58,11 @@ Possible errors: `invalid_language`, `invalid_room_code`, `not_found`, `full`
 | `signal` | `{ from, type, data }` | The other person sent an offer, answer or ICE candidate |
 | `peer:language` | `{ uid, language }` | The other person changed language |
 | `peer:left` | `{ uid }` | The other person left or disconnected |
+| `call:incoming` | `{ roomCode, from: { uid, name }, language }` | Someone is ringing you (sent to all your devices) |
+| `call:cancelled` | `{ roomCode }` | The caller hung up or nobody answered: stop ringing |
+| `call:declined` | `{ uid, name }` | (caller) They declined |
+| `call:unanswered` | `{ uid }` | (caller) No answer within 45 seconds |
+| `message` | chat or state, plus `{ from, name, at }` | In-call chat / the other person's mic, camera, screen-share state |
 
 ## Typical call flow
 

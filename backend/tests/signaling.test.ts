@@ -29,12 +29,15 @@ const fakeRecorder: CallRecorder = {
   async ended(id) {
     recorded.push(`ended ${id}`);
   },
+  async unanswered(c) {
+    recorded.push(`${c.status} ${c.callerUid} -> ${c.receiverUid}`);
+  },
 };
 
 beforeEach(async () => {
   server = http.createServer();
   recorded = [];
-  const { io } = attachSignaling(server, { verifyToken: fakeVerifier, calls: fakeRecorder });
+  const { io } = attachSignaling(server, { verifyToken: fakeVerifier, calls: fakeRecorder, inviteTimeoutMs: 400 });
   closeIo = () => io.close();
   await new Promise<void>((resolve) => server.listen(0, resolve));
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -160,6 +163,64 @@ describe('signaling server', () => {
     await emit(b, 'room:join', { roomCode, language: 'en' });
     await waitFor(() => recorded.length === 3);
     expect(recorded.slice(1)).toEqual(['ended call-1', 'resumed call-1']);
+  });
+});
+
+describe('ringing a contact', () => {
+  test('cannot ring someone who is offline or already in a call', async () => {
+    const [a, c, d] = await Promise.all([client('valid:u1:A'), client('valid:u3:C'), client('valid:u4:D')]);
+    await emit(a, 'room:create', { language: 'hi' });
+    expect(await emit(a, 'call:invite', { userId: 'u2' })).toEqual({ ok: false, error: 'offline' });
+    expect(await emit(a, 'call:invite', { userId: 'u1' })).toEqual({ ok: false, error: 'self' });
+
+    await emit(c, 'room:create', { language: 'en' });
+    expect(await emit(a, 'call:invite', { userId: 'u3' })).toEqual({ ok: false, error: 'busy' });
+    expect(await emit(d, 'call:invite', { userId: 'u1' })).toEqual({ ok: false, error: 'not_in_room' });
+  });
+
+  test('the callee is rung on their device and can decline', async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    const { roomCode } = await emit(a, 'room:create', { language: 'hi' });
+
+    const incoming = next(b, 'call:incoming');
+    expect(await emit(a, 'call:invite', { userId: 'u2' })).toEqual({ ok: true });
+    expect(await incoming).toEqual({ roomCode, from: { uid: 'u1', name: 'A' }, language: 'hi' });
+    expect(await emit(a, 'call:invite', { userId: 'u2' })).toEqual({ ok: false, error: 'already_ringing' });
+
+    const declined = next(a, 'call:declined');
+    expect(await emit(b, 'call:decline', { roomCode })).toEqual({ ok: true });
+    expect(await declined).toEqual({ uid: 'u2', name: 'B' });
+    await waitFor(() => recorded.includes('rejected u1 -> u2'));
+  });
+
+  test('answering by joining the room stops the ringing without a missed call', async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    const { roomCode } = await emit(a, 'room:create', { language: 'hi' });
+    await emit(a, 'call:invite', { userId: 'u2' });
+
+    const callee = await client('valid:u2:B');
+    expect(await emit(callee, 'room:join', { roomCode, language: 'en' })).toMatchObject({ ok: true });
+    await waitFor(() => recorded.length === 1);
+    expect(recorded).toEqual(['started u1(hi) -> u2(en)']);
+    // Too late to decline once answered.
+    expect(await emit(b, 'call:decline', { roomCode })).toEqual({ ok: false, error: 'not_found' });
+  });
+
+  test('stops ringing when the caller hangs up, or after the timeout', async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    const first = await emit(a, 'room:create', { language: 'hi' });
+    await emit(a, 'call:invite', { userId: 'u2' });
+    const cancelled = next(b, 'call:cancelled');
+    await emit(a, 'room:leave');
+    expect(await cancelled).toEqual({ roomCode: first.roomCode });
+
+    const second = await emit(a, 'room:create', { language: 'hi' });
+    await emit(a, 'call:invite', { userId: 'u2' });
+    const unanswered = next(a, 'call:unanswered');
+    const cancelledAgain = next(b, 'call:cancelled');
+    expect(await unanswered).toEqual({ uid: 'u2' });
+    expect(await cancelledAgain).toEqual({ roomCode: second.roomCode });
+    await waitFor(() => recorded.filter((r) => r === 'missed u1 -> u2').length === 2);
   });
 });
 

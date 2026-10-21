@@ -31,7 +31,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               style: FilledButton.styleFrom(backgroundColor: Brand.success, minimumSize: const Size(0, 38)),
               onPressed: () {
                 _store.markRead(n.id);
-                context.go('/incoming/${n.contactId}');
+                context.go('/incoming');
               },
               icon: const Icon(Icons.videocam_rounded, size: 18),
               label: const Text('Answer'),

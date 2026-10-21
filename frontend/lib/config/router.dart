@@ -65,9 +65,7 @@ final appRouter = GoRouter(
         contactId: state.uri.queryParameters['contact'],
       ),
     ),
-    GoRoute(
-      path: '/incoming/:contactId',
-      builder: (context, state) => IncomingCallScreen(contactId: state.pathParameters['contactId']!),
-    ),
+    // A contact is ringing (IncomingCalls).
+    GoRoute(path: '/incoming', builder: (context, state) => const IncomingCallScreen()),
   ],
 );

@@ -24,6 +24,13 @@ export const userService = {
     return rowToUser(result.rows[0]);
   },
 
+  async getById(id: string): Promise<User | null> {
+    // users.id is a UUID; anything else can't match (and would make Postgres throw).
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    return result.rows[0] ? rowToUser(result.rows[0]) : null;
+  },
+
   async getByFirebaseUid(firebaseUid: string): Promise<User | null> {
     const result = await pool.query('SELECT * FROM users WHERE firebase_uid = $1', [firebaseUid]);
     return result.rows[0] ? rowToUser(result.rows[0]) : null;

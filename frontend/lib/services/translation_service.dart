@@ -8,7 +8,7 @@ import '../config/supported_languages.dart';
 /// signaling socket. The call screen already renders that shape
 /// (TranslationEntry).
 class TranslationService {
-  /// False in the prototype: the call screen plays a scripted demo instead.
+  /// False until the AI pipeline is connected.
   bool get isAvailable => false;
 
   bool isLanguageSupported(String code) => supportedLanguages.any((l) => l.code == code);

@@ -24,7 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _resetPassword() async {
     final email = Session.instance.user?.email;
-    if (email == null || email.isEmpty || kDemoMode) {
+    if (email == null || email.isEmpty) {
       showToast(context, 'Password reset is available when signed in with Firebase.');
       return;
     }

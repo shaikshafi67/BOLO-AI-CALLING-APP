@@ -23,7 +23,7 @@ class DashboardScreen extends StatelessWidget {
 
   Widget _build(BuildContext context, bool wide) {
     final store = HistoryStore.instance;
-    final online = kDemoMode ? store.people.where((c) => c.presence == Presence.online).toList() : store.people;
+    final online = store.people;
 
     return ListView(
       padding: EdgeInsets.fromLTRB(wide ? 28 : 16, wide ? 28 : 8, wide ? 28 : 16, 32),
@@ -73,10 +73,6 @@ class DashboardScreen extends StatelessWidget {
               ],
               const SizedBox(height: 22),
               _RecentCalls(),
-              if (kDemoMode) ...[
-                const SizedBox(height: 20),
-                const PrototypeNotice(title: 'Sample data.', message: 'Demo mode shows made-up statistics and call history.'),
-              ],
             ],
           ),
         ),
@@ -198,29 +194,29 @@ class _StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mockStats = HistoryStore.instance.stats;
+    final stats = HistoryStore.instance.stats;
     final cards = [
-      for (var i = 0; i < mockStats.length; i++)
+      for (var i = 0; i < stats.length; i++)
         AppCard(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
-                Expanded(child: Text(mockStats[i].label, style: TextStyle(color: context.colors.muted, fontSize: 13))),
+                Expanded(child: Text(stats[i].label, style: TextStyle(color: context.colors.muted, fontSize: 13))),
                 Icon(_icons[i], size: 18, color: context.brand),
               ]),
               const SizedBox(height: 10),
-              Text(mockStats[i].value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5)),
+              Text(stats[i].value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5)),
               const SizedBox(height: 4),
               Row(children: [
                 Icon(
-                  mockStats[i].trend > 0 ? Icons.trending_up_rounded : mockStats[i].trend < 0 ? Icons.trending_down_rounded : Icons.remove_rounded,
+                  stats[i].trend > 0 ? Icons.trending_up_rounded : stats[i].trend < 0 ? Icons.trending_down_rounded : Icons.remove_rounded,
                   size: 15,
-                  color: mockStats[i].trend > 0 ? Brand.success : mockStats[i].trend < 0 ? Brand.warning : context.colors.subtle,
+                  color: stats[i].trend > 0 ? Brand.success : stats[i].trend < 0 ? Brand.warning : context.colors.subtle,
                 ),
                 const SizedBox(width: 4),
-                Expanded(child: Text(mockStats[i].change, style: TextStyle(fontSize: 12, color: context.colors.muted), overflow: TextOverflow.ellipsis)),
+                Expanded(child: Text(stats[i].change, style: TextStyle(fontSize: 12, color: context.colors.muted), overflow: TextOverflow.ellipsis)),
               ]),
             ],
           ),
@@ -272,7 +268,7 @@ class _WeeklyChartState extends State<_WeeklyChart> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(kDemoMode ? 'Call minutes this week' : 'Call minutes, last 7 days', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          const Text('Call minutes, last 7 days', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
           const SizedBox(height: 2),
           Text(_selected == null ? '$total minutes total' : '${days[_selected!]}: ${minutes[_selected!]} minutes',
               style: TextStyle(color: context.colors.muted, fontSize: 13)),
@@ -341,7 +337,7 @@ class _OnlineNow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Expanded(child: Text(kDemoMode ? 'Online now' : 'Recent people', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
+            const Expanded(child: Text('Recent people', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
             TextButton(onPressed: () => context.go('/contacts'), child: const Text('All contacts')),
           ]),
           if (contacts.isEmpty)
@@ -352,10 +348,10 @@ class _OnlineNow extends StatelessWidget {
           for (final c in contacts.take(4))
             ListTile(
               contentPadding: const EdgeInsets.only(right: 4),
-              leading: Avatar(name: c.name, size: 38, presence: kDemoMode ? c.presence : null),
+              leading: Avatar(name: c.name, size: 38),
               title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
               subtitle: Text(
-                kDemoMode ? c.location ?? '' : c.lastCallAt == null ? '' : 'Last call ${formatRelative(c.lastCallAt!)}',
+                c.lastCallAt == null ? '' : 'Last call ${formatRelative(c.lastCallAt!)}',
                 style: TextStyle(fontSize: 12, color: context.colors.subtle),
               ),
               trailing: IconButton(

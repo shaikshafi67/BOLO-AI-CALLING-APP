@@ -9,9 +9,7 @@ import 'services/session.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppState.instance.load();
-  if (!kDemoMode) {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  }
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   Session.instance.start();
   runApp(const BoloAIApp());
 }

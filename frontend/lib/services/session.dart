@@ -6,12 +6,8 @@ import '../models/user.dart';
 import 'auth_service.dart';
 import 'device_session.dart';
 import 'history_store.dart';
+import 'incoming_calls.dart';
 import 'user_service.dart';
-
-/// Offline demo mode for presentations and screenshots:
-///   flutter run --dart-define=BOLOAI_DEMO=true
-/// Skips Firebase sign-in and uses a mock user. Never on by default.
-const bool kDemoMode = bool.fromEnvironment('BOLOAI_DEMO');
 
 /// The signed-in user as the app sees it. Combines the Firebase account
 /// (id, email, display name) with the preferred language, which is saved on
@@ -33,10 +29,6 @@ class Session extends ChangeNotifier {
   bool _registering = false;
 
   void start() {
-    if (kDemoMode) {
-      _user = const AppUser(id: 'demo', name: 'Shafi Shaik', email: 'shafi@boloai.app', preferredLanguage: 'hi');
-      return;
-    }
     _sub?.cancel();
     final auth = AuthService();
     _user = _fromFirebase(auth.currentUser);
@@ -47,6 +39,7 @@ class Session extends ChangeNotifier {
       AuthService().signOut();
     };
     DeviceSession.instance.ready.addListener(_onDeviceReady);
+    IncomingCalls.instance.attach();
     _sub = auth.authStateChanges().listen((u) {
       if (u == null) {
         DeviceSession.instance.stop();
@@ -105,7 +98,6 @@ class Session extends ChangeNotifier {
 
   /// Re-read the Firebase user (e.g. after setting the display name).
   void refresh() {
-    if (kDemoMode) return;
     _user = _fromFirebase(AuthService().currentUser);
     notifyListeners();
   }
@@ -116,7 +108,7 @@ class Session extends ChangeNotifier {
     AppState.instance.prefs?.setString(_langKey(u.id), code);
     _user = u.copyWith(preferredLanguage: code);
     notifyListeners();
-    if (!kDemoMode && DeviceSession.instance.ready.value) {
+    if (DeviceSession.instance.ready.value) {
       UserService().updateLanguage(code).catchError((Object e) => debugPrint('[session] language not saved: $e'));
     }
   }
@@ -129,11 +121,6 @@ class Session extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    if (kDemoMode) {
-      _user = null;
-      notifyListeners();
-      return;
-    }
     await DeviceSession.instance.release();
     await AuthService().signOut();
   }

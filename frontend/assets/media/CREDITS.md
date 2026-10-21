@@ -9,7 +9,7 @@ them in the app (e.g. "Marcus Bello") are mock data.
 
 | File | Mixkit clip |
 |---|---|
-| `call-marcus.mp4`, `call-marcus.jpg` | Guy facing in the middle of a video call on his computer (#10457) |
+| `call-marcus.jpg` | Guy facing in the middle of a video call on his computer (#10457) |
 | `balcony-call.mp4`, `balcony-call.jpg` | Girl on a video call standing on a balcony at sunset (#10440) |
 | `family-call.jpg` | Family making a video call on smartphone (#4523) |
 | `doctor-call.jpg` | Female doctor talking on a video call (#4833) |

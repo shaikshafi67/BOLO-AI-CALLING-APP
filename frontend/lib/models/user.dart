@@ -14,10 +14,6 @@ class AppUser {
   final String? location;
   final DateTime? lastCallAt;
 
-  /// Stock demo footage standing in for this person's camera (asset path).
-  final String? demoVideo;
-  final String? demoPoster;
-
   const AppUser({
     required this.id,
     required this.name,
@@ -27,8 +23,6 @@ class AppUser {
     this.presence = Presence.offline,
     this.location,
     this.lastCallAt,
-    this.demoVideo,
-    this.demoPoster,
   });
 
   String get firstName => name.trim().split(RegExp(r'\s+')).first;
@@ -47,7 +41,5 @@ class AppUser {
         presence: presence,
         location: location,
         lastCallAt: lastCallAt,
-        demoVideo: demoVideo,
-        demoPoster: demoPoster,
       );
 }

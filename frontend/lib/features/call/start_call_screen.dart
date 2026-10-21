@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
 import '../../core/app_state.dart';
-import '../../core/formatters.dart';
 import '../../models/user.dart';
 import '../../core/theme.dart';
 import '../../services/call_service.dart';
@@ -43,7 +42,14 @@ class _StartCallScreenState extends State<StartCallScreen> {
     setState(() => _starting = true);
     final String code;
     try {
-      code = kDemoMode ? generateRoomCode() : (await CallService.start(language: AppState.instance.call.myLanguage)).roomCode;
+      final session = await CallService.start(language: AppState.instance.call.myLanguage);
+      code = session.roomCode;
+      // Ring the chosen contact; if they can't be rung, the room code still works.
+      final contact = HistoryStore.instance.personById(_contactId);
+      if (contact != null) {
+        final problem = await session.invite(contact.id, contact.name);
+        if (problem != null && mounted) showToast(context, problem);
+      }
     } on CallException catch (e) {
       if (!mounted) return;
       setState(() => _starting = false);

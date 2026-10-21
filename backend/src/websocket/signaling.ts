@@ -41,6 +41,11 @@ export function attachSignaling(
     iceServers?: IceServer[];
     /// Records connected calls for call history.
     calls?: CallRecorder;
+    /// Finds who to ring for `call:invite` (a users.id from the database).
+    /// Without it, the id is taken to be the Firebase uid (tests).
+    resolveUser?: (userId: string) => Promise<{ uid: string } | null>;
+    /// How long an invite rings before it counts as missed.
+    inviteTimeoutMs?: number;
     corsOrigin?: string | string[];
   },
 ) {
@@ -87,6 +92,39 @@ export function attachSignaling(
         return null;
       });
     roomCalls.set(roomCode, { callId, queue: callId, uids: [caller.uid, receiver.uid], live: true });
+  }
+
+  // ---- Ringing a contact (call:invite) ----
+
+  /// A ringing invite per room: the caller is waiting in the room for the callee.
+  interface Invite {
+    roomCode: string;
+    callerUid: string;
+    callerLanguage: string;
+    calleeUid: string;
+    timer: NodeJS.Timeout;
+  }
+  const invites = new Map<string, Invite>();
+  const inviteTimeoutMs = options.inviteTimeoutMs ?? 45_000;
+
+  /// Stops ringing. Unanswered invites are recorded as missed or declined,
+  /// and the callee's devices are told to stop ringing.
+  function endInvite(roomCode: string, outcome: 'answered' | 'missed' | 'rejected') {
+    const invite = invites.get(roomCode);
+    if (!invite) return;
+    clearTimeout(invite.timer);
+    invites.delete(roomCode);
+    if (outcome === 'answered') return;
+    io.to(userRoom(invite.calleeUid)).emit('call:cancelled', { roomCode });
+    options.calls
+      ?.unanswered?.({
+        roomCode,
+        callerUid: invite.callerUid,
+        callerLanguage: invite.callerLanguage,
+        receiverUid: invite.calleeUid,
+        status: outcome,
+      })
+      .catch(logError('record unanswered call'));
   }
 
   function callDisconnected(roomCode: string) {
@@ -151,7 +189,12 @@ export function attachSignaling(
       socket.join(roomCode);
       socket.to(roomCode).emit('peer:joined', { uid: user.uid, name: displayName, language });
       ack({ ok: true, roomCode, peers: result.peers.map(publicView), iceServers });
-      if (result.peers.length > 0) callConnected(roomCode);
+      if (result.peers.length > 0) {
+        // Whoever joins ends the ringing (the callee answered, or someone used the code).
+        const invite = invites.get(roomCode);
+        if (invite) endInvite(roomCode, invite.calleeUid === user.uid ? 'answered' : 'missed');
+        callConnected(roomCode);
+      }
     };
 
     // Create a new room and join it as the first participant.
@@ -204,6 +247,54 @@ export function attachSignaling(
       reply({ ok: true });
     });
 
+    // Ring someone into this room: their signed-in devices get `call:incoming`.
+    socket.on('call:invite', async (payload: { userId?: unknown } = {}, ack?: Ack) => {
+      const reply = typeof ack === 'function' ? ack : () => undefined;
+      const roomCode = rooms.roomOf(socket.id);
+      const me = rooms.participant(socket.id);
+      if (!roomCode || !me) return reply({ ok: false, error: 'not_in_room' });
+      if (rooms.participants(roomCode).length > 1) return reply({ ok: false, error: 'already_connected' });
+      if (invites.has(roomCode)) return reply({ ok: false, error: 'already_ringing' });
+      const userId = typeof payload?.userId === 'string' ? payload.userId.trim() : '';
+      if (!userId) return reply({ ok: false, error: 'invalid_user' });
+
+      let target: { uid: string } | null;
+      try {
+        target = options.resolveUser ? await options.resolveUser(userId) : { uid: userId };
+      } catch {
+        return reply({ ok: false, error: 'server_error' });
+      }
+      if (!target) return reply({ ok: false, error: 'not_found' });
+      if (target.uid === user.uid) return reply({ ok: false, error: 'self' });
+      if ((await io.in(userRoom(target.uid)).fetchSockets()).length === 0) return reply({ ok: false, error: 'offline' });
+      if (rooms.hasUser(target.uid)) return reply({ ok: false, error: 'busy' });
+      // The caller may have hung up while we looked the callee up.
+      if (rooms.roomOf(socket.id) !== roomCode) return reply({ ok: false, error: 'not_in_room' });
+
+      const timer = setTimeout(() => {
+        io.to(roomCode).emit('call:unanswered', { uid: target!.uid });
+        endInvite(roomCode, 'missed');
+      }, inviteTimeoutMs);
+      invites.set(roomCode, { roomCode, callerUid: user.uid, callerLanguage: me.language, calleeUid: target.uid, timer });
+      io.to(userRoom(target.uid)).emit('call:incoming', {
+        roomCode,
+        from: { uid: user.uid, name: displayName },
+        language: me.language,
+      });
+      reply({ ok: true });
+    });
+
+    // The callee said no: the caller hears `call:declined`.
+    socket.on('call:decline', (payload: { roomCode?: unknown } = {}, ack?: Ack) => {
+      const reply = typeof ack === 'function' ? ack : () => undefined;
+      const roomCode = typeof payload?.roomCode === 'string' ? payload.roomCode.trim().toUpperCase() : '';
+      const invite = invites.get(roomCode);
+      if (!invite || invite.calleeUid !== user.uid) return reply({ ok: false, error: 'not_found' });
+      io.to(roomCode).emit('call:declined', { uid: user.uid, name: displayName });
+      endInvite(roomCode, 'rejected');
+      reply({ ok: true });
+    });
+
     // Tell the other side which language this person now speaks.
     socket.on('language:update', (payload: { language?: unknown } = {}, ack?: Ack) => {
       const reply = typeof ack === 'function' ? ack : () => undefined;
@@ -220,6 +311,8 @@ export function attachSignaling(
       if (!left) return;
       socket.leave(left.roomCode);
       socket.to(left.roomCode).emit('peer:left', { uid: left.participant.uid });
+      // The caller hung up before anyone answered.
+      if (invites.get(left.roomCode)?.callerUid === left.participant.uid) endInvite(left.roomCode, 'missed');
       callDisconnected(left.roomCode);
     };
 

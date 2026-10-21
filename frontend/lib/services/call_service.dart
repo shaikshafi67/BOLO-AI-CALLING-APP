@@ -294,6 +294,9 @@ class CallSession extends ChangeNotifier {
   bool peerCameraOn = true;
   bool peerSharing = false;
 
+  /// The contact we're ringing (call:invite), until they answer or not.
+  String? ringingName;
+
   /// In-call chat, oldest first.
   final messages = <ChatMessage>[];
   int unreadChat = 0;
@@ -353,6 +356,8 @@ class CallSession extends ChangeNotifier {
       }
     });
     _socket.on('peer:left', (_) => _onPeerLeft());
+    _socket.on('call:declined', (_) => _inviteEnded('${ringingName ?? 'They'} declined the call.'));
+    _socket.on('call:unanswered', (_) => _inviteEnded('${ringingName ?? 'They'} didn\u2019t answer.'));
     _socket.on('message', (data) {
       if (data is Map) _onMessage(Map<String, dynamic>.from(data));
     });
@@ -372,6 +377,7 @@ class CallSession extends ChangeNotifier {
   Future<void> _onPeerJoined(CallPeer peer) async {
     if (_closed) return;
     _peer = peer;
+    ringingName = null;
     _setState(ConnectionStateKind.connecting);
     // We were here first, so we make the offer.
     await _resetPeerConnection();
@@ -457,6 +463,35 @@ class CallSession extends ChangeNotifier {
     unawaited(_resetPeerConnection());
     _notices.add('$name left the call.');
     _setState(ConnectionStateKind.waiting);
+  }
+
+  // ---- Ringing a contact ----
+
+  /// Rings [userId] (a users.id) into this room. Returns null when it's
+  /// ringing, else a message to show (offline, busy…); the room stays open
+  /// either way so the code can still be shared.
+  Future<String?> invite(String userId, String name) async {
+    final reply = await CallService._request(_socket, 'call:invite', {'userId': userId})
+        .catchError((Object _) => <String, dynamic>{'ok': false, 'error': 'unreachable'});
+    if (reply['ok'] == true) {
+      ringingName = name;
+      notifyListeners();
+      return null;
+    }
+    return switch (reply['error']) {
+      'offline' => '$name isn\u2019t online right now. Share the room code to call them.',
+      'busy' => '$name is on another call. Try again soon.',
+      'not_found' => 'This person isn\u2019t on BoloAI any more.',
+      _ => 'Couldn\u2019t ring $name. Share the room code instead.',
+    };
+  }
+
+  /// They declined, or didn't answer in time: tell the caller and hang up.
+  Future<void> _inviteEnded(String message) async {
+    if (_closed || ringingName == null) return;
+    ringingName = null;
+    _notices.add(message);
+    await leave();
   }
 
   // ---- In-call messages ----

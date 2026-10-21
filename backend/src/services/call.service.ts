@@ -31,11 +31,12 @@ export const callService = {
     roomCode: string;
     callerLanguage: string;
     receiverLanguage: string;
+    status?: CallStatus;
   }): Promise<Call> {
     const result = await pool.query(
       `INSERT INTO calls (caller_id, receiver_id, status, room_code, caller_language, receiver_language)
-       VALUES ($1, $2, 'accepted', $3, $4, $5) RETURNING *`,
-      [input.callerId, input.receiverId, input.roomCode, input.callerLanguage, input.receiverLanguage],
+       VALUES ($1, $2, $6, $3, $4, $5) RETURNING *`,
+      [input.callerId, input.receiverId, input.roomCode, input.callerLanguage, input.receiverLanguage, input.status ?? 'accepted'],
     );
     return rowToCall(result.rows[0]);
   },

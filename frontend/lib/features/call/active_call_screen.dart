@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
 import '../../core/app_state.dart';
 import '../../core/formatters.dart';
-import '../../core/mock_data.dart';
 import '../../core/theme.dart';
 import '../../models/translation_entry.dart';
 import '../../models/user.dart';
@@ -22,9 +21,6 @@ import 'call_extras.dart';
 import 'remote_video.dart';
 import 'translation_panel.dart';
 
-/// Presenter-only scenarios to demonstrate every call state during a demo.
-enum DemoScenario { normal, unstable, reconnecting, translationUnavailable }
-
 class ActiveCallScreen extends StatefulWidget {
   final String roomCode;
   final String? contactId;
@@ -35,14 +31,9 @@ class ActiveCallScreen extends StatefulWidget {
 }
 
 class _ActiveCallScreenState extends State<ActiveCallScreen> {
-  /// Demo mode plays a scripted call; otherwise this is a real WebRTC call.
-  final bool _demo = kDemoMode;
-  late final AppUser _demoRemote = widget.contactId == null ? contactById(demoContactId) : contactById(widget.contactId);
   final _call = AppState.instance.call;
 
   ConnectionStateKind _connection = ConnectionStateKind.connecting;
-  StreamSubscription<ConnectionStateKind>? _connSub;
-  DemoScenario _scenario = DemoScenario.normal;
 
   CallSession? _session;
   StreamSubscription<String>? _noticeSub;
@@ -52,13 +43,12 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   /// Who is on the other end: the live peer, else whoever was last here,
   /// else the contact this call was started for.
   AppUser get _remote {
-    if (_demo) return _demoRemote;
     final p = _session?.peer;
     if (p != null) return AppUser(id: p.uid, name: p.name, email: '', preferredLanguage: p.language);
     return _lastRemote ?? HistoryStore.instance.personById(widget.contactId) ?? const AppUser(id: '', name: 'Your guest', email: '', preferredLanguage: 'en');
   }
 
-  bool get _hasPeer => _demo || _session?.peer != null;
+  bool get _hasPeer => _session?.peer != null;
 
   late bool _micOn = _call.micOn;
   late bool _cameraOn = _call.cameraOn;
@@ -72,14 +62,12 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   Timer? _clock;
   Duration _elapsed = Duration.zero;
 
-  // Live translation arrives with the AI pipeline (Phase 6); real calls
-  // carry the original audio until then.
-  late List<TranslationEntry> _entries = _demo ? demoTranscript(_remote.name) : [];
-  late TranslationEntry? _current = _demo ? _entries.last : null;
-  TranslationStatus _pipeline = TranslationStatus.completed;
-  Timer? _demoTimer;
-  Timer? _demoFinish;
-  int _queueIndex = 0;
+  // Live translation arrives with the AI pipeline (Phase 6); until then
+  // calls carry the original audio and there are no transcript lines.
+  // ignore: prefer_final_fields
+  List<TranslationEntry> _entries = const [];
+  // ignore: prefer_final_fields
+  TranslationEntry? _current;
 
   /// Bumped on every state change so the phone bottom sheet can listen.
   final _stateTick = ValueNotifier<int>(0);
@@ -100,28 +88,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     _connect();
   }
 
-  void _connect() {
-    if (!_demo) {
-      _connectLive();
-      return;
-    }
-    _connSub?.cancel();
-    _connSub = _simulateConnection().listen((s) {
-      if (!mounted) return;
-      setState(() => _connection = s);
-      if (s == ConnectionStateKind.connected) {
-        _startClock();
-        _scheduleNextLine();
-      }
-    });
-  }
-
-  /// Demo mode: shows the handshake states without a server.
-  Stream<ConnectionStateKind> _simulateConnection() async* {
-    yield ConnectionStateKind.connecting;
-    await Future.delayed(const Duration(milliseconds: 1800));
-    yield ConnectionStateKind.connected;
-  }
+  void _connect() => _connectLive();
 
   void _startClock() {
     _clock ??= Timer.periodic(const Duration(seconds: 1), (_) {
@@ -188,72 +155,18 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   void _toggleCamera() => _session != null ? _session!.setCamera(!_cameraOn) : setState(() => _cameraOn = !_cameraOn);
   void _toggleSpeaker() => _session != null ? _session!.setSpeaker(!_speakerOn) : setState(() => _speakerOn = !_speakerOn);
 
-  ConnectionStateKind get _effectiveConnection {
-    if (_connection != ConnectionStateKind.connected) return _connection;
-    return switch (_scenario) {
-      DemoScenario.unstable => ConnectionStateKind.unstable,
-      DemoScenario.reconnecting => ConnectionStateKind.reconnecting,
-      _ => ConnectionStateKind.connected,
-    };
-  }
+  ConnectionStateKind get _effectiveConnection => _connection;
 
   bool get _inCall => _effectiveConnection == ConnectionStateKind.connected || _effectiveConnection == ConnectionStateKind.unstable;
 
-  TranslationStatus get _status {
-    if (!_demo) return TranslationStatus.unavailable;
-    if (_scenario == DemoScenario.translationUnavailable) return TranslationStatus.unavailable;
-    if (!_translateOn) return TranslationStatus.idle;
-    return _pipeline;
-  }
-
-  /// Plays the scripted demo lines: "translating…" for a moment, then "ready".
-  /// TODO: Connect Speech-to-Text and Translation APIs — replace with a
-  /// subscription to the real transcript stream from the backend.
-  void _scheduleNextLine() {
-    _demoTimer?.cancel();
-    if (_queueIndex >= demoQueue.length) return;
-    _demoTimer = Timer(const Duration(seconds: 6), () {
-      if (!mounted || _ended) return;
-      if (!_inCall || _status == TranslationStatus.unavailable || !_translateOn) {
-        _scheduleNextLine();
-        return;
-      }
-      final line = demoQueue[_queueIndex];
-      final entry = TranslationEntry(
-        id: 'live_$_queueIndex',
-        isLocal: line.local,
-        speakerName: line.local ? 'You' : _remote.name,
-        sourceLanguage: line.local ? 'hi' : 'en',
-        targetLanguage: line.local ? 'en' : 'hi',
-        originalText: line.local ? line.hi : line.en,
-        translatedText: line.local ? line.en : line.hi,
-        timestamp: DateTime.now(),
-      );
-      setState(() {
-        _current = entry;
-        _pipeline = TranslationStatus.processing;
-      });
-      _demoFinish = Timer(const Duration(milliseconds: 1800), () {
-        if (!mounted) return;
-        setState(() {
-          _entries = [..._entries, entry];
-          _pipeline = TranslationStatus.completed;
-          _queueIndex++;
-        });
-        _scheduleNextLine();
-      });
-    });
-  }
+  TranslationStatus get _status => _translateOn ? TranslationStatus.unavailable : TranslationStatus.idle;
 
   @override
   void dispose() {
     _detach();
     // Leaving the screen hangs up.
     if (!_ended) _session?.leave();
-    _connSub?.cancel();
     _clock?.cancel();
-    _demoTimer?.cancel();
-    _demoFinish?.cancel();
     _stateTick.dispose();
     super.dispose();
   }
@@ -262,44 +175,27 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     if (_session != null) HistoryStore.instance.refreshSoon();
     _session?.leave();
     _clock?.cancel();
-    _demoTimer?.cancel();
-    _demoFinish?.cancel();
     setState(() => _ended = true);
   }
 
   Future<void> _rejoin() async {
-    if (!_demo) {
-      _detach();
-      _session = null;
-      try {
-        final session = await CallService.join(widget.roomCode, language: _call.myLanguage);
-        if (!mounted) {
-          unawaited(session.leave());
-          return;
-        }
-        setState(() {
-          _ended = false;
-          _elapsed = Duration.zero;
-          _clock = null;
-        });
-        _attach(session);
-      } on CallException catch (e) {
-        if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+    _detach();
+    _session = null;
+    try {
+      final session = await CallService.join(widget.roomCode, language: _call.myLanguage);
+      if (!mounted) {
+        unawaited(session.leave());
+        return;
       }
-      return;
+      setState(() {
+        _ended = false;
+        _elapsed = Duration.zero;
+        _clock = null;
+      });
+      _attach(session);
+    } on CallException catch (e) {
+      if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
     }
-    setState(() {
-      _ended = false;
-      _elapsed = Duration.zero;
-      _scenario = DemoScenario.normal;
-      _connection = ConnectionStateKind.connecting;
-      _clock = null;
-      _queueIndex = 0;
-      _entries = demoTranscript(_remote.name);
-      _current = _entries.last;
-      _pipeline = TranslationStatus.completed;
-    });
-    _connect();
   }
 
   void _toggleTranslate() {
@@ -420,46 +316,6 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
                 ],
                 if (_session?.canSwitchCamera ?? false) item(Icons.cameraswitch_rounded, 'Switch camera', () => _session?.switchCamera()),
                 item(Icons.copy_rounded, 'Copy room code', _copyCode),
-                if (_demo) ...[
-                  const Divider(color: Color(0xFF292524)),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 6, 16, 2),
-                    child: Row(
-                      children: [
-                        Icon(Icons.science_outlined, size: 16, color: Brand.marigold300),
-                        SizedBox(width: 8),
-                        Text(
-                          'PRESENTER DEMO: SIMULATE STATE',
-                          style: TextStyle(color: Brand.marigold300, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6),
-                        ),
-                      ],
-                    ),
-                  ),
-                  item(
-                    Icons.wifi_off_rounded,
-                    'Connection unstable',
-                    () => setState(() => _scenario = DemoScenario.unstable),
-                    active: _scenario == DemoScenario.unstable,
-                  ),
-                  item(
-                    Icons.sync_rounded,
-                    'Reconnecting',
-                    () => setState(() => _scenario = DemoScenario.reconnecting),
-                    active: _scenario == DemoScenario.reconnecting,
-                  ),
-                  item(
-                    Icons.block_rounded,
-                    'Translation unavailable',
-                    () => setState(() => _scenario = DemoScenario.translationUnavailable),
-                    active: _scenario == DemoScenario.translationUnavailable,
-                  ),
-                  item(
-                    Icons.restart_alt_rounded,
-                    'Back to normal',
-                    () => setState(() => _scenario = DemoScenario.normal),
-                    active: _scenario == DemoScenario.normal,
-                  ),
-                ],
               ],
             ),
           ),
@@ -723,7 +579,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
             ),
 
           if (conn == ConnectionStateKind.waiting)
-            _WaitingOverlay(roomCode: widget.roomCode, onCopy: _copyCode)
+            _WaitingOverlay(roomCode: widget.roomCode, onCopy: _copyCode, ringing: _session?.ringingName)
           else if (conn == ConnectionStateKind.connecting || conn == ConnectionStateKind.reconnecting)
             _ConnectingOverlay(reconnecting: conn == ConnectionStateKind.reconnecting, name: _hasPeer ? _remote.name : 'the call'),
         ],
@@ -977,7 +833,10 @@ class _ConnectingOverlay extends StatelessWidget {
 class _WaitingOverlay extends StatelessWidget {
   final String roomCode;
   final VoidCallback onCopy;
-  const _WaitingOverlay({required this.roomCode, required this.onCopy});
+
+  /// The contact being rung, if any.
+  final String? ringing;
+  const _WaitingOverlay({required this.roomCode, required this.onCopy, this.ringing});
 
   @override
   Widget build(BuildContext context) {
@@ -988,16 +847,16 @@ class _WaitingOverlay extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const LogoMark(size: 64),
+          if (ringing != null) Avatar(name: ringing!, size: 72, ringColor: Brand.marigold400) else const LogoMark(size: 64),
           const SizedBox(height: 18),
-          const Text(
-            'Waiting for someone to join',
+          Text(
+            ringing != null ? 'Calling $ringing…' : 'Waiting for someone to join',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Share this room code. The call starts as soon as they join.',
+          Text(
+            ringing != null ? 'Ringing their BoloAI app. You can also share this room code.' : 'Share this room code. The call starts as soon as they join.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Color(0xFFA8A29E), fontSize: 13),
           ),

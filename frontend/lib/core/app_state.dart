@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_notification.dart';
-import 'mock_data.dart';
 
 /// App-wide settings and state, kept deliberately simple: one ChangeNotifier
 /// per concern, saved to the device with shared_preferences. Widgets listen
@@ -107,12 +106,17 @@ class CallSettingsController extends ChangeNotifier {
 class NotificationsController extends ChangeNotifier {
   // TODO: Connect backend database — load from GET /api/notifications and
   // receive incoming-call pushes over the signaling socket / FCM.
-  List<AppNotification> items = mockNotifications();
+  List<AppNotification> items = [];
 
   int get unreadCount => items.where((n) => !n.read).length;
 
   void markRead(String id) {
     items = [for (final n in items) n.id == id ? n.markRead() : n];
+    notifyListeners();
+  }
+
+  void add(AppNotification n) {
+    items = [n, ...items];
     notifyListeners();
   }
 

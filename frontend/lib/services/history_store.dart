@@ -1,10 +1,18 @@
 import 'package:flutter/foundation.dart';
 import '../config/supported_languages.dart';
-import '../core/mock_data.dart';
 import '../models/call_history_entry.dart';
 import '../models/user.dart';
 import 'api_client.dart';
 import 'session.dart';
+
+/// One figure on the dashboard, e.g. "Total calls 12, +3 this week".
+class DashboardStat {
+  final String label;
+  final String value;
+  final String change;
+  final int trend; // 1 up, 0 flat, -1 down
+  const DashboardStat(this.label, this.value, this.change, this.trend);
+}
 
 /// The signed-in user's call history (GET /api/calls), shared by the
 /// dashboard, history, contacts and start-call screens.
@@ -15,7 +23,7 @@ class HistoryStore extends ChangeNotifier {
   HistoryStore._();
   static final HistoryStore instance = HistoryStore._();
 
-  List<CallHistoryEntry> _calls = kDemoMode ? mockCallHistory : const [];
+  List<CallHistoryEntry> _calls = const [];
   List<CallHistoryEntry> get calls => _calls;
 
   bool _loading = false;
@@ -25,7 +33,7 @@ class HistoryStore extends ChangeNotifier {
   String? _error;
   String? get error => _error;
 
-  bool _loadedOnce = kDemoMode;
+  bool _loadedOnce = false;
   bool get loadedOnce => _loadedOnce;
 
   /// People found through search, remembered so screens opened with
@@ -33,7 +41,7 @@ class HistoryStore extends ChangeNotifier {
   final _known = <String, AppUser>{};
 
   Future<void> load() async {
-    if (kDemoMode || _loading) return;
+    if (_loading) return;
     _loading = true;
     notifyListeners();
     try {
@@ -60,8 +68,8 @@ class HistoryStore extends ChangeNotifier {
   void refreshSoon() => Future.delayed(const Duration(seconds: 1), load);
 
   void clear() {
-    _calls = kDemoMode ? mockCallHistory : const [];
-    _loadedOnce = kDemoMode;
+    _calls = const [];
+    _loadedOnce = false;
     _error = null;
     _known.clear();
     notifyListeners();
@@ -71,7 +79,6 @@ class HistoryStore extends ChangeNotifier {
 
   /// Everyone you've had a call with, most recent first.
   List<AppUser> get people {
-    if (kDemoMode) return mockContacts;
     final seen = <String, AppUser>{};
     for (final c in _calls) {
       seen.putIfAbsent(
@@ -92,7 +99,6 @@ class HistoryStore extends ChangeNotifier {
 
   /// Call minutes per day for the dashboard chart, with day labels.
   ({List<String> labels, List<int> minutes}) get weeklyMinutes {
-    if (kDemoMode) return (labels: const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], minutes: mockWeeklyMinutes);
     const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final today = DateTime.now();
     return (
@@ -103,7 +109,6 @@ class HistoryStore extends ChangeNotifier {
 
   /// The four dashboard figures.
   List<DashboardStat> get stats {
-    if (kDemoMode) return mockStats;
     final weekAgo = DateTime.now().subtract(const Duration(days: 7));
     final thisWeek = _calls.where((c) => c.timestamp.isAfter(weekAgo)).toList();
     int minutesOf(Iterable<CallHistoryEntry> calls) => calls.fold(0, (sum, c) => sum + (c.duration.inSeconds / 60).round());

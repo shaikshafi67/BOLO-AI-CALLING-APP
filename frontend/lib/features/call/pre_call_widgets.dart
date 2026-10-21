@@ -3,12 +3,11 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../../core/app_state.dart';
 import '../../core/theme.dart';
 import '../../services/call_service.dart';
-import '../../services/session.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/common.dart';
 
 /// Camera/mic check before a call. Opens the real camera and microphone
-/// (demo mode shows a placeholder); the call then takes over the same stream.
+/// and the call then takes over the same stream.
 class CameraPreviewCard extends StatefulWidget {
   final String name;
   final bool showSpeaker;
@@ -27,7 +26,6 @@ class _CameraPreviewCardState extends State<CameraPreviewCard> {
   @override
   void initState() {
     super.initState();
-    if (kDemoMode) return;
     LocalMedia.previewShown = true;
     _call.addListener(_applyToggles);
     _open();
@@ -61,14 +59,12 @@ class _CameraPreviewCardState extends State<CameraPreviewCard> {
 
   @override
   void dispose() {
-    if (!kDemoMode) {
-      _call.removeListener(_applyToggles);
-      LocalMedia.previewShown = false;
-      _renderer.srcObject = null;
-      _renderer.dispose();
-      // Stops the camera unless the call already took it over.
-      LocalMedia.releasePreview();
-    }
+    _call.removeListener(_applyToggles);
+    LocalMedia.previewShown = false;
+    _renderer.srcObject = null;
+    _renderer.dispose();
+    // Stops the camera unless the call already took it over.
+    LocalMedia.releasePreview();
     super.dispose();
   }
 
@@ -79,9 +75,7 @@ class _CameraPreviewCardState extends State<CameraPreviewCard> {
     final call = _call;
     final name = widget.name;
     final showSpeaker = widget.showSpeaker;
-    final status = kDemoMode
-        ? (call.cameraOn ? 'Camera preview (mock)' : 'Camera is off')
-        : _error ?? (!call.cameraOn ? 'Camera is off' : _stream == null ? 'Starting camera…' : 'No camera found: voice only');
+    final status = _error ?? (!call.cameraOn ? 'Camera is off' : _stream == null ? 'Starting camera…' : 'No camera found: voice only');
     return ListenableBuilder(
       listenable: call,
       builder: (context, _) => ClipRRect(

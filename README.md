@@ -8,7 +8,7 @@ BoloAI is a real-time 1:1 video/voice calling app that removes language barriers
 
 ## Status
 
-Auth (Firebase), one-device sessions, backend profiles, call history, people search and real 1:1 video/voice calls (WebRTC over the Socket.IO signaling server) work. The AI translation pipeline (Phase 6) is not implemented yet: calls carry the original audio, and live captions show "Translation unavailable".
+Auth (Firebase), one-device sessions, backend profiles, call history, people search, ringing a contact (Accept/Decline) and real 1:1 video/voice calls (WebRTC over the Socket.IO signaling server) work. The AI translation pipeline (Phase 6) is not implemented yet: calls carry the original audio, and live captions show "Translation unavailable".
 
 ## Tech Stack
 
@@ -83,10 +83,10 @@ cd frontend && flutter test
 ## Known Limitations
 
 - The AI pipeline (speech recognition, translation, TTS, captions) is not implemented yet (Phase 6).
-- Calls are by room code; ringing a specific contact (incoming-call screen) is not wired up yet.
+- Ringing a contact needs them to have the app open (no push notifications yet); otherwise share the room code.
 - Contacts are the people you've had calls with, plus search across registered users; there are no contact requests or online status.
 - Changing your name on the Profile screen updates Firebase only, not the backend profile (there is no rename endpoint yet).
-- Notifications are still mock data.
+- Notifications (missed calls) live on the device only; they are not stored on the server.
 - No TURN server is configured by default. Calls work on the same network and behind most home routers; set `TURN_SERVER_URL`/`TURN_USERNAME`/`TURN_PASSWORD` in `backend/.env` for calls across mobile data or strict NATs (see `docs/signaling.md`).
 - Browsers only allow the camera on `https://` or `localhost`.
 - `firebase_core_web` is pinned to 3.10.0 via `dependency_overrides` in `frontend/pubspec.yaml` — 3.11.0 fails to compile for web (a dart2js `isA`/`JSObject` regression). Remove the override once upstream ships a fix.

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../config/supported_languages.dart';
 import '../../core/app_state.dart';
-import '../../core/mock_data.dart';
+import '../../services/history_store.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/session.dart';
@@ -47,7 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     setState(() => _saving = true);
     try {
-      if (!kDemoMode) await AuthService().updateDisplayName(name);
+      await AuthService().updateDisplayName(name);
       // The language is also saved to the backend profile (PATCH /api/users/me/language).
       Session.instance
         ..setNameLocally(name)
@@ -96,8 +96,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const Divider(),
                 const SizedBox(height: 14),
                 Row(children: [
-                  Expanded(child: _stat(context, Icons.call_outlined, 'Total calls', mockStats[0].value)),
-                  Expanded(child: _stat(context, Icons.schedule_rounded, 'Call minutes', mockStats[1].value)),
+                  Expanded(child: _stat(context, Icons.call_outlined, 'Total calls', HistoryStore.instance.stats[0].value)),
+                  Expanded(child: _stat(context, Icons.schedule_rounded, 'Call minutes', HistoryStore.instance.stats[1].value)),
                 ]),
               ]),
             ),

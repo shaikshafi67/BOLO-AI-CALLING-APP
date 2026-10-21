@@ -1,30 +1,86 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/supported_languages.dart';
-import '../../core/formatters.dart';
-import '../../core/mock_data.dart';
 import '../../core/theme.dart';
+import '../../services/call_service.dart';
+import '../../services/incoming_calls.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/common.dart';
 
-/// Full-screen incoming call.
-/// TODO: Connect WebRTC signaling server — opened by a 'call:incoming' socket
-/// event (or a push notification on mobile) instead of the notifications list.
-class IncomingCallScreen extends StatelessWidget {
-  final String contactId;
-  const IncomingCallScreen({super.key, required this.contactId});
+/// Full-screen incoming call, opened by IncomingCalls when a contact rings
+/// (`call:incoming`).
+class IncomingCallScreen extends StatefulWidget {
+  const IncomingCallScreen({super.key});
+
+  @override
+  State<IncomingCallScreen> createState() => _IncomingCallScreenState();
+}
+
+class _IncomingCallScreenState extends State<IncomingCallScreen> {
+  final _incoming = IncomingCalls.instance;
+  late final IncomingCall? _call = _incoming.current;
+  bool _accepting = false;
+  bool _left = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _incoming.addListener(_onChange);
+    if (_call == null) {
+      // Opened without a ringing call (e.g. a reload): nothing to answer.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _leave());
+    }
+  }
+
+  @override
+  void dispose() {
+    _incoming.removeListener(_onChange);
+    super.dispose();
+  }
+
+  /// The caller hung up (or the timeout passed) while this screen was ringing.
+  void _onChange() {
+    if (_accepting || _call == null || _incoming.current != null) return;
+    showToast(context, 'You missed a call from ${_call.callerName}.', icon: Icons.phone_missed_rounded);
+    _leave();
+  }
+
+  void _leave() {
+    if (_left || !mounted) return;
+    _left = true;
+    context.go('/home');
+  }
+
+  Future<void> _accept() async {
+    setState(() => _accepting = true);
+    try {
+      final roomCode = await _incoming.accept();
+      if (!mounted) return;
+      _left = true;
+      context.go('/call/$roomCode');
+    } on CallException catch (e) {
+      if (!mounted) return;
+      showToast(context, e.code == 'not_found' ? 'The call ended before you could join.' : e.message, icon: Icons.error_outline_rounded);
+      _leave();
+    }
+  }
+
+  void _decline() {
+    _incoming.decline();
+    _leave();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final caller = contactById(contactId);
+    final call = _call;
+    final name = call?.callerName ?? 'Someone';
+    final language = call?.callerLanguage ?? 'en';
+
     return Scaffold(
       backgroundColor: Brand.callBackground,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (caller.demoPoster != null) ...[
-            Image.asset(caller.demoPoster!, fit: BoxFit.cover),
-            Container(color: Colors.black.withValues(alpha: 0.6)),
-          ],
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -32,42 +88,83 @@ class IncomingCallScreen extends StatelessWidget {
                 children: [
                   const Text('Incoming BoloAI call', style: TextStyle(color: Color(0xFFA8A29E))),
                   const Spacer(),
-                  Avatar(name: caller.name, size: 112, ringColor: Brand.marigold400),
+                  _Pulse(child: Avatar(name: name, size: 112, ringColor: Brand.marigold400)),
                   const SizedBox(height: 18),
-                  Text(caller.name, style: AppTheme.serif(42, color: Colors.white)),
+                  Text(name, textAlign: TextAlign.center, style: AppTheme.serif(42, color: Colors.white)),
                   const SizedBox(height: 6),
-                  Text('Speaks ${languageFor(caller.preferredLanguage).label} · ${caller.location ?? ''}',
-                      style: const TextStyle(color: Color(0xFFD6D3D1))),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                    decoration: BoxDecoration(color: Brand.ink700.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(999)),
-                    child: const Text('Live translation will be on', style: TextStyle(color: Brand.ink100, fontSize: 12)),
+                  Text(
+                    'Speaks ${languageFor(language).label}',
+                    style: const TextStyle(color: Color(0xFFD6D3D1)),
                   ),
                   const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _Action(
-                        color: Brand.danger,
-                        icon: Icons.call_end_rounded,
-                        label: 'Decline',
-                        onTap: () => context.go('/notifications'),
-                      ),
-                      _Action(
-                        color: Brand.success,
-                        icon: Icons.videocam_rounded,
-                        label: 'Accept',
-                        onTap: () => context.go('/call/${generateRoomCode()}?contact=${caller.id}'),
-                      ),
-                    ],
-                  ),
+                  if (_accepting)
+                    const Column(children: [
+                      SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)),
+                      SizedBox(height: 12),
+                      Text('Joining…', style: TextStyle(color: Colors.white)),
+                    ])
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _Action(
+                          color: Brand.danger,
+                          icon: Icons.call_end_rounded,
+                          label: 'Decline',
+                          onTap: _decline,
+                        ),
+                        _Action(
+                          color: Brand.success,
+                          icon: Icons.videocam_rounded,
+                          label: 'Accept',
+                          onTap: _accept,
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A gently pulsing ring around the caller's avatar.
+class _Pulse extends StatefulWidget {
+  final Widget child;
+  const _Pulse({required this.child});
+
+  @override
+  State<_Pulse> createState() => _PulseState();
+}
+
+class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
+  late final _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        return Stack(alignment: Alignment.center, children: [
+          Container(
+            width: 112 + 60 * t,
+            height: 112 + 60 * t,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: Brand.marigold400.withValues(alpha: 0.25 * (1 - t))),
+          ),
+          child!,
+        ]);
+      },
+      child: widget.child,
     );
   }
 }
