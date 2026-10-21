@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../config/api_config.dart';
 import '../core/app_state.dart';
+import '../models/translation_entry.dart';
 import '../models/video_filter.dart';
 import 'device_session.dart';
 import 'web_media.dart';
@@ -172,6 +174,7 @@ class CallService {
         socket: socket,
         roomCode: '${reply['roomCode']}',
         language: '${payload['language']}',
+        myUid: user.uid,
         iceServers: [for (final s in (reply['iceServers'] as List? ?? const [])) Map<String, dynamic>.from(s as Map)],
         localStream: media,
       );
@@ -249,6 +252,7 @@ class CallSession extends ChangeNotifier {
     required this.language,
     required List<Map<String, dynamic>> iceServers,
     required MediaStream localStream,
+    required this.myUid,
   }) : _socket = socket,
        _iceServers = iceServers,
        _localStream = localStream;
@@ -293,6 +297,34 @@ class CallSession extends ChangeNotifier {
   bool peerMicOn = true;
   bool peerCameraOn = true;
   bool peerSharing = false;
+
+  /// This user's Firebase uid (to tell our captions from theirs).
+  final String myUid;
+
+  // ---- Live translation state ----
+
+  /// The server has the AI services configured.
+  bool _serverTranslation = false;
+  bool _hadCaption = false;
+
+  /// A service error is stopping translation for now (the call continues).
+  bool translationProblem = false;
+
+  bool _translationEnabled = true;
+  bool get translationEnabled => _translationEnabled;
+
+  /// Translation is working: the server can do it, or captions are arriving.
+  bool get translationReady => !translationProblem && (_serverTranslation || _hadCaption);
+
+  MicStreamer? _mic;
+  bool _sendingAudio = false;
+
+  /// Finished sentences, oldest first.
+  final transcript = <TranslationEntry>[];
+
+  /// The latest caption; [captionInterim] while the sentence is still being spoken.
+  TranslationEntry? caption;
+  bool captionInterim = false;
 
   /// The contact we're ringing (call:invite), until they answer or not.
   String? ringingName;
@@ -358,6 +390,18 @@ class CallSession extends ChangeNotifier {
     _socket.on('peer:left', (_) => _onPeerLeft());
     _socket.on('call:declined', (_) => _inviteEnded('${ringingName ?? 'They'} declined the call.'));
     _socket.on('call:unanswered', (_) => _inviteEnded('${ringingName ?? 'They'} didn\u2019t answer.'));
+    _socket.on('caption', (data) {
+      if (data is Map) _onCaption(Map<String, dynamic>.from(data));
+    });
+    _socket.on('translation:audio', (data) {
+      if (data is Map) _onTranslatedVoice(data['audio']);
+    });
+    _socket.on('translation:status', (data) {
+      if (data is Map && data['available'] == false && !_closed) {
+        translationProblem = true;
+        notifyListeners();
+      }
+    });
     _socket.on('message', (data) {
       if (data is Map) _onMessage(Map<String, dynamic>.from(data));
     });
@@ -370,6 +414,7 @@ class CallSession extends ChangeNotifier {
       _peer = existingPeer;
       _setState(ConnectionStateKind.connecting);
     }
+    unawaited(_startTranslation());
   }
 
   // ---- Signaling ----
@@ -463,6 +508,93 @@ class CallSession extends ChangeNotifier {
     unawaited(_resetPeerConnection());
     _notices.add('$name left the call.');
     _setState(ConnectionStateKind.waiting);
+  }
+
+  // ---- Live translation ----
+
+  /// Asks the server whether translation is available, then streams the
+  /// microphone (16 kHz PCM) while it should be heard (see [_shouldSendAudio]).
+  Future<void> _startTranslation() async {
+    final reply = await CallService._request(_socket, 'translation:start')
+        .catchError((Object _) => <String, dynamic>{'ok': false});
+    if (_closed) return;
+    _serverTranslation = reply['available'] == true;
+    notifyListeners();
+    final microphone = _localStream.getAudioTracks().firstOrNull;
+    if (!_serverTranslation || !MicStreamer.supported || microphone == null) return;
+    try {
+      final mic = await MicStreamer.start(microphone, _onPcm);
+      if (_closed) {
+        await mic.stop();
+      } else {
+        _mic = mic;
+      }
+    } catch (e) {
+      debugPrint('[call] microphone capture for translation failed: $e');
+    }
+  }
+
+  bool get _shouldSendAudio =>
+      !_closed && _serverTranslation && _translationEnabled && _micOn && _peer != null && _state == ConnectionStateKind.connected;
+
+  void _onPcm(Uint8List pcm) {
+    if (_shouldSendAudio) {
+      _socket.emit('audio', pcm);
+      _sendingAudio = true;
+    } else if (_sendingAudio) {
+      // Muted, paused or alone: close the recognition stream (saves cost).
+      _sendingAudio = false;
+      _socket.emit('translation:stop');
+    }
+  }
+
+  void _onCaption(Map<String, dynamic> m) {
+    if (_closed) return;
+    final isLocal = m['speakerUid'] == myUid;
+    final original = '${m['original'] ?? ''}';
+    final translated = m['translated'] as String?;
+    final done = m['final'] == true;
+    final entry = TranslationEntry(
+      id: '${m['id']}',
+      isLocal: isLocal,
+      speakerName: isLocal ? 'You' : '${m['speakerName'] ?? _peer?.name ?? 'Them'}',
+      sourceLanguage: '${m['sourceLanguage'] ?? language}',
+      targetLanguage: '${m['targetLanguage'] ?? language}',
+      originalText: original,
+      translatedText: translated ?? original,
+      timestamp: DateTime.now(),
+    );
+    _hadCaption = true;
+    caption = entry;
+    captionInterim = !done;
+    if (done) {
+      final i = transcript.indexWhere((e) => e.id == entry.id);
+      if (i >= 0) {
+        transcript[i] = entry;
+      } else {
+        transcript.add(entry);
+      }
+      if (translated != null) translationProblem = false;
+    }
+    notifyListeners();
+  }
+
+  /// Their sentence, spoken in our language.
+  void _onTranslatedVoice(dynamic audio) {
+    if (_closed || !_translationEnabled || !_speakerOn || !AppState.instance.call.voiceTranslation) return;
+    final Uint8List? bytes = switch (audio) {
+      Uint8List b => b,
+      ByteBuffer b => b.asUint8List(),
+      List b => Uint8List.fromList(b.cast<int>()),
+      _ => null,
+    };
+    if (bytes != null && bytes.isNotEmpty) unawaited(playTranslation(remoteRenderer, bytes));
+  }
+
+  /// Pause or resume translation (the call itself is unaffected).
+  void setTranslationEnabled(bool on) {
+    _translationEnabled = on;
+    notifyListeners();
   }
 
   // ---- Ringing a contact ----
@@ -673,7 +805,10 @@ class CallSession extends ChangeNotifier {
   }
 
   /// Call from a tap: browsers allow sound to start after a user gesture.
-  Future<void> unlockAudio() => _playRemoteAudio();
+  Future<void> unlockAudio() async {
+    await _mic?.resume();
+    await _playRemoteAudio();
+  }
 
   /// Puts the right picture on the video sender: the screen while sharing,
   /// else the (possibly filtered) camera, or nothing while the camera is off.
@@ -904,6 +1039,9 @@ class CallSession extends ChangeNotifier {
     _state = ConnectionStateKind.ended;
     notifyListeners();
 
+    final mic = _mic;
+    _mic = null;
+    await mic?.stop();
     if (_socket.connected) {
       await CallService._request(_socket, 'room:leave').catchError((Object _) => <String, dynamic>{});
     }

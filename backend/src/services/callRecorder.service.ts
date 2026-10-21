@@ -1,3 +1,4 @@
+import { pool } from '../config/db';
 import { CallRecorder } from '../websocket/callRecorder';
 import { callService } from './call.service';
 import { userService } from './user.service';
@@ -24,6 +25,13 @@ export const pgCallRecorder: CallRecorder = {
   },
   async ended(callId) {
     await callService.updateStatus(callId, 'ended');
+  },
+  async translation(callId, line) {
+    await pool.query(
+      `INSERT INTO translations (call_id, source_language, target_language, source_text, translated_text)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [callId, line.sourceLanguage, line.targetLanguage, line.sourceText, line.translatedText],
+    );
   },
   async unanswered(call) {
     const [caller, receiver] = await Promise.all([

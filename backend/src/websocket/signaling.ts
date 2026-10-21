@@ -5,6 +5,8 @@ import { Participant, ROOM_CODE_PATTERN, RoomManager } from './roomManager';
 import { SessionStore, sessionStatus } from '../sessions/sessionStore';
 import { IceServer, iceServersFromEnv } from './iceServers';
 import { CallRecorder } from './callRecorder';
+import { TranslationEngine } from '../translation/engine';
+import { LivePipeline } from '../translation/livePipeline';
 
 /// Identity extracted from a verified Firebase ID token.
 export interface VerifiedUser {
@@ -46,6 +48,8 @@ export function attachSignaling(
     resolveUser?: (userId: string) => Promise<{ uid: string } | null>;
     /// How long an invite rings before it counts as missed.
     inviteTimeoutMs?: number;
+    /// Speech-to-text, translation and text-to-speech for live translation.
+    translation?: TranslationEngine;
     corsOrigin?: string | string[];
   },
 ) {
@@ -93,6 +97,26 @@ export function attachSignaling(
       });
     roomCalls.set(roomCode, { callId, queue: callId, uids: [caller.uid, receiver.uid], live: true });
   }
+
+  // ---- Live translation ----
+
+  const pipeline = options.translation
+    ? new LivePipeline(options.translation, {
+        toRoom: (roomCode, event, payload) => io.to(roomCode).emit(event, payload),
+        toOthers: (socketId, roomCode, event, payload) => io.to(roomCode).except(socketId).emit(event, payload),
+        toSocket: (socketId, event, payload) => io.to(socketId).emit(event, payload),
+        // Text only, linked to the call record (privacy: no audio is stored).
+        translated: (line) => {
+          const entry = roomCalls.get(line.roomCode);
+          const recorder = options.calls;
+          if (!entry || !recorder?.translation) return;
+          enqueue(entry, 'save translation', (id) => recorder.translation!(id, line));
+        },
+      })
+    : null;
+
+  /// Largest audio chunk accepted (100 ms of 16 kHz PCM is 3.2 KB).
+  const MAX_AUDIO_CHUNK = 64 * 1024;
 
   // ---- Ringing a contact (call:invite) ----
 
@@ -295,6 +319,22 @@ export function attachSignaling(
       reply({ ok: true });
     });
 
+    // Live translation. The app asks first, then streams its microphone as
+    // 16 kHz PCM chunks while the call is connected and the mic is on.
+    socket.on('translation:start', (ack?: Ack) => {
+      if (typeof ack === 'function') ack({ ok: true, available: options.translation?.available() ?? false });
+    });
+    socket.on('audio', (chunk: unknown) => {
+      if (!pipeline || !options.translation?.available()) return;
+      if (!Buffer.isBuffer(chunk) || chunk.length === 0 || chunk.length > MAX_AUDIO_CHUNK) return;
+      const me = rooms.participant(socket.id);
+      const listener = rooms.peersOf(socket.id)[0];
+      if (!me || !listener) return; // nobody to translate for
+      const roomCode = rooms.roomOf(socket.id)!;
+      pipeline.audio({ socketId: socket.id, uid: me.uid, name: me.name, language: me.language, roomCode }, listener.language, chunk);
+    });
+    socket.on('translation:stop', () => pipeline?.stop(socket.id));
+
     // Tell the other side which language this person now speaks.
     socket.on('language:update', (payload: { language?: unknown } = {}, ack?: Ack) => {
       const reply = typeof ack === 'function' ? ack : () => undefined;
@@ -307,6 +347,7 @@ export function attachSignaling(
     });
 
     const leave = () => {
+      pipeline?.stop(socket.id);
       const left = rooms.leave(socket.id);
       if (!left) return;
       socket.leave(left.roomCode);

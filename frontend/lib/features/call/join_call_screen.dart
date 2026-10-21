@@ -113,7 +113,7 @@ class _JoinCallScreenState extends State<JoinCallScreen> {
           ),
         ),
         const SizedBox(height: 14),
-        const PrototypeNotice(message: 'Ask the person calling you for their room code. AI translation and captions are coming soon.'),
+        const PrototypeNotice(title: 'Tip.', message: 'Ask the person calling you for their room code.'),
       ],
     );
 

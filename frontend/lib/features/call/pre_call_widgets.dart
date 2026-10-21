@@ -237,7 +237,7 @@ class CallLanguageSettings extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               secondary: const Icon(Icons.record_voice_over_outlined),
               title: const Text('AI voice translation'),
-              subtitle: const Padding(padding: EdgeInsets.only(top: 4), child: Align(alignment: Alignment.centerLeft, child: ComingSoonTag())),
+              subtitle: const Text('Hear the other person speaking your language'),
               value: call.voiceTranslation,
               onChanged: (v) => call.update(voiceTranslation: v),
             ),

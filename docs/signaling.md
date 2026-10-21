@@ -108,3 +108,23 @@ since one account can be signed in on only one device): one taps **Start Call**,
 other enters the room code under **Join Call**. Browsers only allow the camera on
 `https://` or `localhost`, so a phone's browser cannot use the dev server over the LAN;
 use the Android app with `--dart-define=BOLOAI_API_URL=http://<PC IP>:4000` instead.
+
+## Live translation
+
+The app asks `translation:start` (reply `{ ok, available }`; `available` is false until the
+Google Cloud key is configured). While the call is connected, the mic is on and translation
+isn't paused, the browser streams its microphone as binary `audio` chunks: 16 kHz, mono,
+16-bit PCM, about 100 ms each. `translation:stop` closes the speaker's recognition stream
+(sent when muting or pausing). Nothing is sent to Google while someone is alone in the room.
+
+The server (`backend/src/translation/`) runs Google Speech-to-Text streaming in the speaker's
+language, translates each finished sentence into the listener's language, and synthesises it:
+
+| Event | Payload | To |
+|---|---|---|
+| `caption` | `{ id, speakerUid, speakerName, sourceLanguage, targetLanguage, original, translated, final, latencyMs? }` | Both people. Interim captions have `translated: null`, `final: false` |
+| `translation:audio` | `{ id, audio (MP3 bytes), mime }` | The listener only |
+| `translation:status` | `{ available: false, reason }` | A service failed; the call continues without translation |
+
+Finished sentences are stored as text in the `translations` table (never audio). Check the
+Google setup with `npm run check:translation` in `backend/`.

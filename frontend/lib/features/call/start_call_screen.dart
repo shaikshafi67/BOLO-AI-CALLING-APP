@@ -124,7 +124,10 @@ class _StartCallScreenState extends State<StartCallScreen> {
           label: const Text('Start Call'),
         ),
         const SizedBox(height: 14),
-        const PrototypeNotice(message: 'Video and voice are live. AI translation and captions are coming soon, so for now you hear each other’s original voice.'),
+        const PrototypeNotice(
+          title: 'Live translation.',
+          message: 'Works in Chrome and Edge. Speak in short sentences; each one is translated when you pause.',
+        ),
       ],
     );
 

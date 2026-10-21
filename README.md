@@ -8,7 +8,7 @@ BoloAI is a real-time 1:1 video/voice calling app that removes language barriers
 
 ## Status
 
-Auth (Firebase), one-device sessions, backend profiles, call history, people search, ringing a contact (Accept/Decline) and real 1:1 video/voice calls (WebRTC over the Socket.IO signaling server) work. The AI translation pipeline (Phase 6) is not implemented yet: calls carry the original audio, and live captions show "Translation unavailable".
+Auth (Firebase), one-device sessions, backend profiles, call history, people search, ringing a contact (Accept/Decline) and real 1:1 video/voice calls (WebRTC over the Socket.IO signaling server) work. Live AI translation (Phase 6) is built for the browser: speech is recognised, translated and spoken to the other person with live captions. It needs a Google Cloud key at `backend/secrets/gcp-service-account.json` (check with `npm run check:translation`); without one, calls carry the original audio and show "Translation unavailable".
 
 ## Tech Stack
 
@@ -82,7 +82,7 @@ cd frontend && flutter test
 
 ## Known Limitations
 
-- The AI pipeline (speech recognition, translation, TTS, captions) is not implemented yet (Phase 6).
+- Live translation captures the microphone in the browser only; in the Android app you see captions but don't send speech or hear the translated voice yet.
 - Ringing a contact needs them to have the app open (no push notifications yet); otherwise share the room code.
 - Contacts are the people you've had calls with, plus search across registered users; there are no contact requests or online status.
 - Changing your name on the Profile screen updates Firebase only, not the backend profile (there is no rename endpoint yet).

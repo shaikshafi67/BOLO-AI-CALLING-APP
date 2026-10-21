@@ -64,10 +64,8 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
 
   // Live translation arrives with the AI pipeline (Phase 6); until then
   // calls carry the original audio and there are no transcript lines.
-  // ignore: prefer_final_fields
-  List<TranslationEntry> _entries = const [];
-  // ignore: prefer_final_fields
-  TranslationEntry? _current;
+  List<TranslationEntry> get _entries => _session?.transcript ?? const [];
+  TranslationEntry? get _current => _session?.caption;
 
   /// Bumped on every state change so the phone bottom sheet can listen.
   final _stateTick = ValueNotifier<int>(0);
@@ -159,7 +157,12 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
 
   bool get _inCall => _effectiveConnection == ConnectionStateKind.connected || _effectiveConnection == ConnectionStateKind.unstable;
 
-  TranslationStatus get _status => _translateOn ? TranslationStatus.unavailable : TranslationStatus.idle;
+  TranslationStatus get _status {
+    final s = _session;
+    if (!_translateOn) return TranslationStatus.idle;
+    if (s == null || !s.translationReady) return TranslationStatus.unavailable;
+    return s.captionInterim ? TranslationStatus.processing : TranslationStatus.completed;
+  }
 
   @override
   void dispose() {
@@ -201,6 +204,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   void _toggleTranslate() {
     showToast(context, _translateOn ? 'Translation paused. You’ll hear the original audio only.' : 'Translation resumed.');
     setState(() => _translateOn = !_translateOn);
+    _session?.setTranslationEnabled(_translateOn);
   }
 
   void _screenShare() {

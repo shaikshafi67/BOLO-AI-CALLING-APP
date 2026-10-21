@@ -173,7 +173,7 @@ class _TranslationPanelState extends State<TranslationPanel> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Live speech recognition and translation will appear here once AI translation is switched on.',
+                  'Each sentence appears here as it is spoken, with its translation.',
                   style: TextStyle(color: _subtle, fontSize: 11),
                 ),
               ),

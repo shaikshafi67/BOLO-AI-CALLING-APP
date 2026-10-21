@@ -114,8 +114,8 @@ class PrototypeNotice extends StatelessWidget {
   final String title;
   const PrototypeNotice({
     super.key,
-    this.title = 'Prototype.',
-    this.message = 'Calls, speech recognition, translation and voice are simulated with sample data. Backend integration is coming soon.',
+    this.title = 'Note.',
+    required this.message,
   });
 
   @override

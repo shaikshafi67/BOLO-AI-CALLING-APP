@@ -5,6 +5,7 @@ import { firebaseVerifier } from './websocket/firebaseVerifier';
 import { pgSessionStore } from './services/session.service';
 import { pgCallRecorder } from './services/callRecorder.service';
 import { userService } from './services/user.service';
+import { GoogleTranslationEngine } from './translation/googleEngine';
 
 const port = Number(process.env.PORT ?? 4000);
 
@@ -22,6 +23,7 @@ const signaling = attachSignaling(server, {
   verifyToken: firebaseVerifier,
   sessions: pgSessionStore,
   calls: pgCallRecorder,
+  translation: new GoogleTranslationEngine(),
   resolveUser: async (userId) => {
     const user = await userService.getById(userId);
     return user ? { uid: user.firebaseUid } : null;

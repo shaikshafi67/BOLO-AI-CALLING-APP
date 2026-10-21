@@ -3,6 +3,7 @@ import type { AddressInfo } from 'net';
 import { io as connect, Socket } from 'socket.io-client';
 import { attachSignaling, TokenVerifier } from '../src/websocket/signaling';
 import type { CallRecorder } from '../src/websocket/callRecorder';
+import type { TranslationEngine } from '../src/translation/engine';
 
 // Stand-in for Firebase Admin: tokens look like "valid:<uid>:<name>".
 const fakeVerifier: TokenVerifier = async (token) => {
@@ -15,6 +16,20 @@ let server: http.Server;
 let url: string;
 let closeIo: () => void;
 const clients: Socket[] = [];
+
+// Stand-in for Google Cloud: audio chunks are text; "final:..." ends a sentence.
+const fakeTranslation: TranslationEngine = {
+  available: () => true,
+  startRecognition: (_language, onResult) => ({
+    write: (chunk) => {
+      const text = chunk.toString();
+      onResult(text.startsWith('final:') ? { text: text.slice(6), final: true } : { text, final: false });
+    },
+    end: () => undefined,
+  }),
+  translate: async (text, _from, to) => `[${to}] ${text}`,
+  synthesize: async (text) => Buffer.from(`mp3:${text}`),
+};
 
 // Stand-in for the database: remembers what the server recorded.
 let recorded: string[] = [];
@@ -37,7 +52,7 @@ const fakeRecorder: CallRecorder = {
 beforeEach(async () => {
   server = http.createServer();
   recorded = [];
-  const { io } = attachSignaling(server, { verifyToken: fakeVerifier, calls: fakeRecorder, inviteTimeoutMs: 400 });
+  const { io } = attachSignaling(server, { verifyToken: fakeVerifier, calls: fakeRecorder, inviteTimeoutMs: 400, translation: fakeTranslation });
   closeIo = () => io.close();
   await new Promise<void>((resolve) => server.listen(0, resolve));
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -163,6 +178,36 @@ describe('signaling server', () => {
     await emit(b, 'room:join', { roomCode, language: 'en' });
     await waitFor(() => recorded.length === 3);
     expect(recorded.slice(1)).toEqual(['ended call-1', 'resumed call-1']);
+  });
+});
+
+describe('live translation', () => {
+  test('captions reach both people and the translated voice only the listener', async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    expect(await emit(a, 'translation:start')).toEqual({ ok: true, available: true });
+    const { roomCode } = await emit(a, 'room:create', { language: 'hi' });
+
+    // Alone in the room: nothing is sent to the AI services.
+    let early = false;
+    a.once('caption', () => (early = true));
+    a.emit('audio', Buffer.from('final:hello?'));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(early).toBe(false);
+
+    await emit(b, 'room:join', { roomCode, language: 'te' });
+    const captionA = next(a, 'caption');
+    const captionB = next(b, 'caption');
+    const voice = next(b, 'translation:audio');
+    let voiceToSpeaker = false;
+    a.once('translation:audio', () => (voiceToSpeaker = true));
+
+    a.emit('audio', Buffer.from('final:namaste'));
+    expect(await captionA).toMatchObject({ speakerUid: 'u1', original: 'namaste', translated: '[te] namaste', final: true });
+    expect(await captionB).toMatchObject({ speakerUid: 'u1', translated: '[te] namaste' });
+    const audio = await voice;
+    expect(Buffer.from(audio.audio).toString()).toBe('mp3:[te] namaste');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(voiceToSpeaker).toBe(false);
   });
 });
 

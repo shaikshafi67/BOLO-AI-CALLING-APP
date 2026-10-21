@@ -14,6 +14,11 @@ export interface CallRecorder {
   resumed(callId: string): Promise<void>;
   /// Someone left the room.
   ended(callId: string): Promise<void>;
+  /// One translated sentence spoken during the call (text only).
+  translation?(
+    callId: string,
+    line: { sourceLanguage: string; targetLanguage: string; sourceText: string; translatedText: string },
+  ): Promise<void>;
   /// A ringing invite nobody answered ('missed') or the callee declined ('rejected').
   unanswered?(call: {
     roomCode: string;

@@ -11,16 +11,17 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "migrate": "ts-node --transpile-only scripts/migrate.ts",
-    "test": "jest"
+    "test": "jest",
+    "check:translation": "ts-node --transpile-only scripts/check-translation.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@google-cloud/speech": "^8.0.1",
-    "@google-cloud/text-to-speech": "^7.0.0",
-    "@google-cloud/translate": "^10.0.1",
+    "@google-cloud/speech": "^8.2.0",
+    "@google-cloud/text-to-speech": "^7.2.0",
+    "@google-cloud/translate": "^10.3.0",
     "bcrypt": "^6.0.0",
     "compression": "^1.8.2",
     "cors": "^2.8.6",
