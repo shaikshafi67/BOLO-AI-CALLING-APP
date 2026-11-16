@@ -211,11 +211,7 @@ class HomeShell extends StatelessWidget {
                 alignment: Alignment.bottomCenter,
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 16),
-                  child: IconButton(
-                    tooltip: 'Log out',
-                    icon: const Icon(Icons.logout_rounded),
-                    onPressed: () => Session.instance.signOut(),
-                  ),
+                  child: _RailAccount(extended: extended),
                 ),
               ),
             ),
@@ -253,6 +249,65 @@ class _CallFab extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 22),
+    );
+  }
+}
+
+/// Bottom of the side rail: who is signed in, and Log out. Extended rails show
+/// the name and email; compact rails show a labelled icon like the destinations.
+class _RailAccount extends StatelessWidget {
+  final bool extended;
+  const _RailAccount({required this.extended});
+
+  @override
+  Widget build(BuildContext context) {
+    void logOut() => Session.instance.signOut();
+    if (!extended) {
+      return Column(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(tooltip: 'Log out', icon: const Icon(Icons.logout_rounded), onPressed: logOut),
+        Text('Log out', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: context.colors.muted)),
+      ]);
+    }
+    return ListenableBuilder(
+      listenable: Session.instance,
+      builder: (context, _) {
+        final user = Session.instance.user;
+        return SizedBox(
+          width: 232,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Divider(color: context.colors.line),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => context.go('/profile'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      child: Row(children: [
+                        Avatar(name: user?.name ?? 'You', size: 36),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(user?.name ?? 'You',
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14), overflow: TextOverflow.ellipsis),
+                            if ((user?.email ?? '').isNotEmpty)
+                              Text(user!.email,
+                                  style: TextStyle(fontSize: 12, color: context.colors.muted), overflow: TextOverflow.ellipsis),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ),
+                IconButton(tooltip: 'Log out', icon: const Icon(Icons.logout_rounded, size: 20), onPressed: logOut),
+              ]),
+            ]),
+          ),
+        );
+      },
     );
   }
 }
