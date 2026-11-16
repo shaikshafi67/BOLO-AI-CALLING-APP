@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../models/user.dart';
 import '../../services/api_client.dart';
 import '../../services/history_store.dart';
+import '../../services/presence_service.dart';
 import '../../services/user_service.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/common.dart';
@@ -41,6 +42,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   @override
   void dispose() {
     _store.removeListener(_onStore);
+    PresenceService.instance.showAlso(const []);
     _debounce?.cancel();
     _search.dispose();
     super.dispose();
@@ -70,6 +72,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       final results = await UserService().search(q);
       if (!mounted || _search.text.trim() != q) return;
       results.forEach(_store.remember);
+      PresenceService.instance.showAlso(results.map((u) => u.id));
       setState(() {
         _found = results;
         _searchError = null;
@@ -244,14 +247,19 @@ class _ContactCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(listenable: PresenceService.instance, builder: (context, _) => _build(context));
+  }
+
+  Widget _build(BuildContext context) {
     final c = contact;
+    final presence = PresenceService.instance.of(c.id);
     return AppCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Avatar(name: c.name, size: 52),
+            Avatar(name: c.name, size: 52, presence: presence),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -267,8 +275,16 @@ class _ContactCard extends StatelessWidget {
           Row(children: [
             Icon(Icons.schedule_rounded, size: 14, color: context.colors.subtle),
             const SizedBox(width: 5),
-            Text(c.lastCallAt == null ? 'No calls yet' : 'Last call ${formatRelative(c.lastCallAt!)}',
-                style: TextStyle(color: context.colors.subtle, fontSize: 12)),
+            Expanded(
+              child: Text(c.lastCallAt == null ? 'No calls yet' : 'Last call ${formatRelative(c.lastCallAt!)}',
+                  style: TextStyle(color: context.colors.subtle, fontSize: 12), overflow: TextOverflow.ellipsis),
+            ),
+            if (presence != null) ...[
+              Container(width: 8, height: 8, decoration: BoxDecoration(color: presenceColors[presence], shape: BoxShape.circle)),
+              const SizedBox(width: 5),
+              Text(presence == Presence.busy ? 'On a call' : presenceLabels[presence]!,
+                  style: TextStyle(color: context.colors.muted, fontSize: 12, fontWeight: FontWeight.w500)),
+            ],
           ]),
           const SizedBox(height: 12),
           const Divider(),

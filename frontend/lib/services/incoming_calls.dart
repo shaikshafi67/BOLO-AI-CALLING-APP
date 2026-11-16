@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import '../config/router.dart';
 import '../core/app_state.dart';
-import '../models/app_notification.dart';
 import 'call_service.dart';
 import 'device_session.dart';
 import 'history_store.dart';
@@ -55,13 +54,8 @@ class IncomingCalls extends ChangeNotifier {
     final call = _current;
     if (call == null || data is! Map || data['roomCode'] != call.roomCode) return;
     _finish();
-    AppState.instance.notifications.add(AppNotification(
-      id: 'missed_${DateTime.now().millisecondsSinceEpoch}',
-      kind: NotificationKind.missedCall,
-      title: 'Missed call',
-      message: 'You missed a call from ${call.callerName}.',
-      createdAt: DateTime.now(),
-    ));
+    // The server records the missed call and its notification, then sends
+    // `notifications:changed` (see Session).
     HistoryStore.instance.refreshSoon();
   }
 

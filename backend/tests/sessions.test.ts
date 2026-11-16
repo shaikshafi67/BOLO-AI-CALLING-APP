@@ -140,6 +140,21 @@ describe('one signed-in device per account', () => {
     await expect(client('valid:u1:Shafi', '')).rejects.toThrow('session_required');
   });
 
+  test('the signed-in device registers its push token; a new device drops it', async () => {
+    await signIn(PHONE);
+    const put = (sessionId: string, token: unknown) =>
+      api('PUT', '/api/sessions/push-token', { token: 'valid:u1:Shafi', sessionId, body: { token } });
+    expect((await put(PHONE, 'fcm-token-1')).status).toBe(204);
+    expect(await store.pushToken('u1')).toBe('fcm-token-1');
+    expect((await put(PHONE, 42)).status).toBe(400);
+
+    await signIn(LAPTOP);
+    expect(await store.pushToken('u1')).toBeNull();
+    // The old device can't put its token back.
+    expect((await put(PHONE, 'fcm-token-1')).status).toBe(401);
+    expect((await put(LAPTOP, null)).status).toBe(204);
+  });
+
   test('rejects malformed session ids and missing headers', async () => {
     expect((await signIn('short')).status).toBe(400);
     expect((await api('GET', '/api/users/me', { token: 'valid:u1:Shafi' })).body.error).toBe('session_required');

@@ -3,6 +3,7 @@ import '../../config/supported_languages.dart';
 import '../../core/app_state.dart';
 import '../../services/history_store.dart';
 import '../../core/theme.dart';
+import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/session.dart';
 import '../../widgets/avatar.dart';
@@ -48,14 +49,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _saving = true);
     try {
       await AuthService().updateDisplayName(name);
-      // The language is also saved to the backend profile (PATCH /api/users/me/language).
-      Session.instance
-        ..setNameLocally(name)
-        ..setPreferredLanguage(_language);
+      // Language and name are also saved to the backend profile, which is
+      // what other people see in search and call history.
+      Session.instance.setPreferredLanguage(_language);
       AppState.instance.prefs?.setString('boloai.country', _country);
+      var savedEverywhere = true;
+      try {
+        await Session.instance.setName(name);
+      } on ApiException catch (e) {
+        debugPrint('[profile] name not saved to the backend: $e');
+        savedEverywhere = false;
+      }
       if (!mounted) return;
       setState(() => _editing = false);
-      showToast(context, 'Profile saved.', icon: Icons.check_circle_outline_rounded);
+      if (savedEverywhere) {
+        showToast(context, 'Profile saved.', icon: Icons.check_circle_outline_rounded);
+      } else {
+        showToast(context, 'Saved on this device. Others will see your new name once BoloAI can reach the server.');
+      }
     } on AuthFailure catch (e) {
       if (mounted) showToast(context, e.message);
     } finally {
@@ -133,7 +144,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Email',
                   prefixIcon: Icon(Icons.mail_outline_rounded, size: 20),
-                  helperText: 'Email changes need verification and will come with the backend.',
+                  helperText: 'Your email can\u2019t be changed here.',
                 ),
               ),
               const SizedBox(height: 14),

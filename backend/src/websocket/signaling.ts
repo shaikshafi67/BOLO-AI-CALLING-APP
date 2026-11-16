@@ -7,6 +7,7 @@ import { IceServer, iceServersFromEnv } from './iceServers';
 import { CallRecorder } from './callRecorder';
 import { TranslationEngine } from '../translation/engine';
 import { LivePipeline } from '../translation/livePipeline';
+import type { PushSender } from '../push/pushSender';
 
 /// Identity extracted from a verified Firebase ID token.
 export interface VerifiedUser {
@@ -50,6 +51,8 @@ export function attachSignaling(
     inviteTimeoutMs?: number;
     /// Speech-to-text, translation and text-to-speech for live translation.
     translation?: TranslationEngine;
+    /// Rings people whose app is closed (and tells them about missed calls).
+    push?: PushSender;
     corsOrigin?: string | string[];
   },
 ) {
@@ -124,8 +127,11 @@ export function attachSignaling(
   interface Invite {
     roomCode: string;
     callerUid: string;
+    callerName: string;
     callerLanguage: string;
     calleeUid: string;
+    /// The callee's app was closed, so they were rung with a push.
+    pushed: boolean;
     timer: NodeJS.Timeout;
   }
   const invites = new Map<string, Invite>();
@@ -148,7 +154,56 @@ export function attachSignaling(
         receiverUid: invite.calleeUid,
         status: outcome,
       })
+      // A missed call leaves a notification: open apps reload theirs.
+      .then(() => {
+        if (outcome === 'missed') io.to(userRoom(invite.calleeUid)).emit('notifications:changed');
+      })
       .catch(logError('record unanswered call'));
+    if (outcome === 'missed' && invite.pushed && options.push) {
+      // Replaces the "is calling" push (same tag) if their app is still closed.
+      void io
+        .in(userRoom(invite.calleeUid))
+        .fetchSockets()
+        .then((sockets) => {
+          if (sockets.length > 0) return;
+          return options.push!.send(invite.calleeUid, {
+            title: 'Missed call',
+            body: `You missed a call from ${invite.callerName}.`,
+            data: { type: 'missed_call', roomCode },
+            tag: roomCode,
+          });
+        })
+        .catch(logError('push missed call'));
+    }
+  }
+
+  // ---- Online status ----
+
+  /// online: has the app open. busy: in a call. offline: app closed, or the
+  /// person turned off "Show when I'm online".
+  type PresenceStatus = 'online' | 'busy' | 'offline';
+  /// uid -> the users.id that watchers know them by (presence:watch).
+  const watchedIds = new Map<string, string>();
+  const lastPresence = new Map<string, PresenceStatus>();
+  const MAX_WATCHED = 100;
+
+  async function presenceOf(uid: string): Promise<PresenceStatus> {
+    const sockets = await io.in(userRoom(uid)).fetchSockets();
+    if (sockets.length === 0 || sockets.some((s) => s.data.hidden === true)) return 'offline';
+    return rooms.hasUser(uid) ? 'busy' : 'online';
+  }
+
+  /// Tells everyone watching [uid] when their status changes.
+  function presenceChanged(uid: string) {
+    const userId = watchedIds.get(uid);
+    if (!userId) return;
+    presenceOf(uid)
+      .then((status) => {
+        if (lastPresence.get(uid) === status) return;
+        lastPresence.set(uid, status);
+        io.to(presenceRoom(uid)).emit('presence:update', { userId, status });
+      })
+      .catch(logError('presence update'));
   }
 
   function callDisconnected(roomCode: string) {
@@ -176,6 +231,8 @@ export function attachSignaling(
       return next(new Error('unauthorized'));
     }
     socket.data.user = user;
+    // "Show when I'm online" turned off on this device.
+    socket.data.hidden = socket.handshake.auth?.hidden === true;
 
     if (options.sessions) {
       const sessionId = socket.handshake.auth?.sessionId;
@@ -204,6 +261,18 @@ export function attachSignaling(
     const user = socket.data.user as VerifiedUser;
     const displayName = user.name ?? user.email?.split('@')[0] ?? 'BoloAI user';
     socket.join(userRoom(user.uid));
+    presenceChanged(user.uid);
+
+    // Ringing while this device was offline (e.g. the app was opened from
+    // the incoming-call push): ring it now.
+    for (const invite of invites.values()) {
+      if (invite.calleeUid !== user.uid) continue;
+      socket.emit('call:incoming', {
+        roomCode: invite.roomCode,
+        from: { uid: invite.callerUid, name: invite.callerName },
+        language: invite.callerLanguage,
+      });
+    }
 
     const publicView = (p: Participant) => ({ uid: p.uid, name: p.name, language: p.language });
 
@@ -213,6 +282,7 @@ export function attachSignaling(
       socket.join(roomCode);
       socket.to(roomCode).emit('peer:joined', { uid: user.uid, name: displayName, language });
       ack({ ok: true, roomCode, peers: result.peers.map(publicView), iceServers });
+      presenceChanged(user.uid);
       if (result.peers.length > 0) {
         // Whoever joins ends the ringing (the callee answered, or someone used the code).
         const invite = invites.get(roomCode);
@@ -290,22 +360,50 @@ export function attachSignaling(
       }
       if (!target) return reply({ ok: false, error: 'not_found' });
       if (target.uid === user.uid) return reply({ ok: false, error: 'self' });
-      if ((await io.in(userRoom(target.uid)).fetchSockets()).length === 0) return reply({ ok: false, error: 'offline' });
       if (rooms.hasUser(target.uid)) return reply({ ok: false, error: 'busy' });
-      // The caller may have hung up while we looked the callee up.
+
+      // App closed: ring their phone with a push instead.
+      let pushed = false;
+      if ((await io.in(userRoom(target.uid)).fetchSockets()).length === 0) {
+        pushed = options.push
+          ? await options.push
+              .send(target.uid, {
+                title: `${displayName} is calling`,
+                body: 'Tap to answer on BoloAI.',
+                data: { type: 'call', roomCode, callerName: displayName },
+                tag: roomCode,
+                ttlSeconds: Math.ceil(inviteTimeoutMs / 1000),
+              })
+              .catch((err) => {
+                logError('push call')(err);
+                return false;
+              })
+          : false;
+        if (!pushed) return reply({ ok: false, error: 'offline' });
+      }
+      // The caller may have hung up (or rung twice) while we looked the callee up.
       if (rooms.roomOf(socket.id) !== roomCode) return reply({ ok: false, error: 'not_in_room' });
+      if (invites.has(roomCode)) return reply({ ok: false, error: 'already_ringing' });
 
       const timer = setTimeout(() => {
         io.to(roomCode).emit('call:unanswered', { uid: target!.uid });
         endInvite(roomCode, 'missed');
       }, inviteTimeoutMs);
-      invites.set(roomCode, { roomCode, callerUid: user.uid, callerLanguage: me.language, calleeUid: target.uid, timer });
+      invites.set(roomCode, {
+        roomCode,
+        callerUid: user.uid,
+        callerName: displayName,
+        callerLanguage: me.language,
+        calleeUid: target.uid,
+        pushed,
+        timer,
+      });
       io.to(userRoom(target.uid)).emit('call:incoming', {
         roomCode,
         from: { uid: user.uid, name: displayName },
         language: me.language,
       });
-      reply({ ok: true });
+      reply({ ok: true, pushed });
     });
 
     // The callee said no: the caller hears `call:declined`.
@@ -346,6 +444,41 @@ export function attachSignaling(
       reply({ ok: true });
     });
 
+    // Which people this device shows online status for (contacts, search
+    // results), by users.id. Replies with their status now; later changes
+    // arrive as `presence:update`. Each call replaces the previous list.
+    socket.on('presence:watch', async (payload: { userIds?: unknown } = {}, ack?: Ack) => {
+      const reply = typeof ack === 'function' ? ack : () => undefined;
+      const ids = Array.isArray(payload?.userIds)
+        ? [...new Set(payload.userIds.filter((id): id is string => typeof id === 'string' && id.length > 0))].slice(0, MAX_WATCHED)
+        : [];
+      for (const room of socket.rooms) if (room.startsWith('presence:')) socket.leave(room);
+      const statuses: Record<string, PresenceStatus> = {};
+      try {
+        await Promise.all(
+          ids.map(async (id) => {
+            const target = options.resolveUser ? await options.resolveUser(id) : { uid: id };
+            if (!target) return;
+            watchedIds.set(target.uid, id);
+            socket.join(presenceRoom(target.uid));
+            const status = await presenceOf(target.uid);
+            lastPresence.set(target.uid, status);
+            statuses[id] = status;
+          }),
+        );
+      } catch {
+        return reply({ ok: false, error: 'server_error' });
+      }
+      reply({ ok: true, statuses });
+    });
+
+    // "Show when I'm online" switched in Settings.
+    socket.on('presence:visibility', (payload: { visible?: unknown } = {}, ack?: Ack) => {
+      socket.data.hidden = payload?.visible === false;
+      presenceChanged(user.uid);
+      if (typeof ack === 'function') ack({ ok: true });
+    });
+
     const leave = () => {
       pipeline?.stop(socket.id);
       const left = rooms.leave(socket.id);
@@ -355,13 +488,17 @@ export function attachSignaling(
       // The caller hung up before anyone answered.
       if (invites.get(left.roomCode)?.callerUid === left.participant.uid) endInvite(left.roomCode, 'missed');
       callDisconnected(left.roomCode);
+      presenceChanged(user.uid);
     };
 
     socket.on('room:leave', (ack?: Ack) => {
       leave();
       if (typeof ack === 'function') ack({ ok: true });
     });
-    socket.on('disconnect', leave);
+    socket.on('disconnect', () => {
+      leave();
+      presenceChanged(user.uid);
+    });
   });
 
   return { io, rooms, kickOtherSessions };
@@ -370,3 +507,5 @@ export function attachSignaling(
 /// Socket.IO room holding every socket of one account (never a call room,
 /// whose codes look like BOLO-1234).
 const userRoom = (uid: string) => `user:${uid}`;
+/// Socket.IO room of the sockets watching [uid]'s online status.
+const presenceRoom = (uid: string) => `presence:${uid}`;

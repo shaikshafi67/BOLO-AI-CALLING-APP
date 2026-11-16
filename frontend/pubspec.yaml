@@ -43,6 +43,7 @@ dependencies:
   flutter_webrtc: ^1.6.2+hotfix.4
   web: ^1.1.1
   dart_webrtc: ^1.8.2
+  firebase_messaging: ^16.7.1
 
 dev_dependencies:
   flutter_test:

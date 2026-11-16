@@ -17,6 +17,9 @@ class CallHistoryEntry {
   final Duration duration;
   final int translatedLines;
 
+  /// Average time from the end of a sentence to its translated voice, or null.
+  final Duration? translationDelay;
+
   const CallHistoryEntry({
     required this.id,
     required this.roomCode,
@@ -29,5 +32,6 @@ class CallHistoryEntry {
     required this.timestamp,
     required this.duration,
     this.translatedLines = 0,
+    this.translationDelay,
   });
 }

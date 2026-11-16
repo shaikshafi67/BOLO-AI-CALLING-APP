@@ -11,5 +11,6 @@ userRouter.use(requireAuth, activeSessionGuard(pgSessionStore));
 
 userRouter.post('/', userController.createProfile);
 userRouter.get('/me', userController.getMe);
+userRouter.patch('/me', userController.updateName);
 userRouter.patch('/me/language', userController.updateLanguage);
 userRouter.get('/search', userController.search);

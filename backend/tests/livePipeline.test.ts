@@ -39,6 +39,34 @@ const shafi = { socketId: 's1', uid: 'u1', name: 'Shafi', language: 'hi', roomCo
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('LivePipeline', () => {
+  test('measures how long each sentence takes to caption and to voice', async () => {
+    let clock = 1000;
+    const lines: any[] = [];
+    const { out } = recorder();
+    const engine = fakeEngine({
+      translate: async (text) => {
+        clock += 300;
+        return `[te] ${text}`;
+      },
+      synthesize: async (text) => {
+        clock += 500;
+        return Buffer.from(text);
+      },
+    });
+    const pipeline = new LivePipeline(engine, { ...out, translated: (line) => lines.push(line) }, () => clock);
+
+    pipeline.audio(shafi, 'te', Buffer.from('final:namaste'));
+    await flush();
+    expect(lines).toEqual([
+      expect.objectContaining({ sourceText: 'namaste', translatedText: '[te] namaste', translateMs: 300, voiceMs: 800 }),
+    ]);
+
+    // Same language: no voice is made.
+    pipeline.audio(shafi, 'hi', Buffer.from('final:kaise ho'));
+    await flush();
+    expect(lines[1]).toMatchObject({ translateMs: 0, voiceMs: null });
+  });
+
   test('interim words caption the room; a finished sentence is translated and voiced for the listener', async () => {
     const engine = fakeEngine();
     const { events, out } = recorder();

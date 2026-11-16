@@ -47,3 +47,10 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // MainActivity taps the call's microphone through flutter_webrtc's
+    // LocalAudioTrack, whose sink type comes from this library (the plugin
+    // ships it at runtime; this only makes it visible to the app's code).
+    compileOnly("io.github.webrtc-sdk:android:150.7871.01")
+}

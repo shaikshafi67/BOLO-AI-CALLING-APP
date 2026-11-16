@@ -170,6 +170,11 @@ class HistoryStore extends ChangeNotifier {
       targetLanguage: theirs,
       timestamp: started,
       duration: ended == null || ended.isBefore(started) ? Duration.zero : ended.difference(started),
+      translatedLines: (j['translatedLines'] as num?)?.toInt() ?? 0,
+      translationDelay: switch (j['avgVoiceMs'] ?? j['avgTranslateMs']) {
+        num ms => Duration(milliseconds: ms.round()),
+        _ => null,
+      },
     );
   }
 }

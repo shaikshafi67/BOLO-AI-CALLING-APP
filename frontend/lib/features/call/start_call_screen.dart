@@ -126,7 +126,7 @@ class _StartCallScreenState extends State<StartCallScreen> {
         const SizedBox(height: 14),
         const PrototypeNotice(
           title: 'Live translation.',
-          message: 'Works in Chrome and Edge. Speak in short sentences; each one is translated when you pause.',
+          message: 'Works in Chrome, Edge and the Android app. Speak in short sentences; each one is translated when you pause.',
         ),
       ],
     );

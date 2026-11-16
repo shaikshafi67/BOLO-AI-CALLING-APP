@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../services/presence_service.dart';
 import '../../config/supported_languages.dart';
 import '../../core/app_state.dart';
 import '../../core/formatters.dart';
@@ -348,7 +349,10 @@ class _OnlineNow extends StatelessWidget {
           for (final c in contacts.take(4))
             ListTile(
               contentPadding: const EdgeInsets.only(right: 4),
-              leading: Avatar(name: c.name, size: 38),
+              leading: ListenableBuilder(
+                listenable: PresenceService.instance,
+                builder: (context, _) => Avatar(name: c.name, size: 38, presence: PresenceService.instance.of(c.id)),
+              ),
               title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
               subtitle: Text(
                 c.lastCallAt == null ? '' : 'Last call ${formatRelative(c.lastCallAt!)}',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_notification.dart';
+import '../services/api_client.dart';
 
 /// App-wide settings and state, kept deliberately simple: one ChangeNotifier
 /// per concern, saved to the device with shared_preferences. Widgets listen
@@ -103,30 +104,64 @@ class CallSettingsController extends ChangeNotifier {
       );
 }
 
+/// Notifications kept on the server (GET /api/notifications), e.g. missed
+/// calls. Changes show at once and are saved in the background; the server
+/// sends `notifications:changed` when it adds one.
 class NotificationsController extends ChangeNotifier {
-  // TODO: Connect backend database — load from GET /api/notifications and
-  // receive incoming-call pushes over the signaling socket / FCM.
   List<AppNotification> items = [];
 
   int get unreadCount => items.where((n) => !n.read).length;
 
-  void markRead(String id) {
-    items = [for (final n in items) n.id == id ? n.markRead() : n];
+  bool _loading = false;
+
+  Future<void> load() async {
+    if (_loading) return;
+    _loading = true;
+    try {
+      final rows = await ApiClient.get('/api/notifications') as List;
+      items = [for (final r in rows) AppNotification.fromJson(Map<String, dynamic>.from(r as Map))];
+      notifyListeners();
+    } on ApiException catch (e) {
+      // No profile yet means nothing to show; otherwise keep what we have.
+      if (e.notFound) {
+        items = [];
+        notifyListeners();
+      } else {
+        debugPrint('[notifications] load failed: $e');
+      }
+    } finally {
+      _loading = false;
+    }
+  }
+
+  void clear() {
+    items = [];
     notifyListeners();
   }
 
-  void add(AppNotification n) {
-    items = [n, ...items];
+  void markRead(String id) {
+    if (!items.any((n) => n.id == id && !n.read)) return;
+    items = [for (final n in items) n.id == id ? n.markRead() : n];
     notifyListeners();
+    _save(ApiClient.patch('/api/notifications/$id/read', const {}));
   }
 
   void markAllRead() {
     items = [for (final n in items) n.markRead()];
     notifyListeners();
+    _save(ApiClient.post('/api/notifications/read-all', const {}));
   }
 
   void remove(String id) {
     items = items.where((n) => n.id != id).toList();
     notifyListeners();
+    _save(ApiClient.delete('/api/notifications/$id'));
+  }
+
+  void _save(Future<dynamic> request) {
+    request.catchError((Object e) {
+      debugPrint('[notifications] not saved: $e');
+      return null;
+    });
   }
 }

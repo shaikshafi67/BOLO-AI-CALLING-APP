@@ -44,6 +44,22 @@ class DeviceSession {
     _socket?.emitWithAck(event, data, ack: (_) {});
   }
 
+  /// Sends an event and waits for the server's reply; null while
+  /// disconnected or if no reply comes.
+  Future<Map<String, dynamic>?> request(String event, Map<String, dynamic> data) {
+    final socket = _socket;
+    if (socket == null || !socket.connected) return Future.value(null);
+    final reply = Completer<Map<String, dynamic>?>();
+    socket.emitWithAck(event, data, ack: (dynamic res) {
+      if (!reply.isCompleted) reply.complete(res is Map ? Map<String, dynamic>.from(res) : null);
+    });
+    return reply.future.timeout(const Duration(seconds: 10), onTimeout: () => null);
+  }
+
+  /// Runs every time the socket (re)connects.
+  final _connectListeners = <VoidCallback>[];
+  void onConnected(VoidCallback listener) => _connectListeners.add(listener);
+
   String? _sessionId;
   bool _freshSignIn = false;
   User? _user;
@@ -148,7 +164,7 @@ class DeviceSession {
           // A fresh ID token on every (re)connect; Firebase tokens last an hour.
           .setAuthFn((send) async {
             try {
-              send({'token': await user.getIdToken(), 'sessionId': sessionId});
+              send({'token': await user.getIdToken(), 'sessionId': sessionId, 'hidden': !_presenceVisible});
             } catch (_) {
               send({'sessionId': sessionId});
             }
@@ -160,7 +176,11 @@ class DeviceSession {
     socket.on('session:revoked', (_) => _revoked(gen));
     _handlers.forEach(socket.on);
     socket.onConnect((_) {
-      if (gen == _generation) ready.value = true;
+      if (gen != _generation) return;
+      ready.value = true;
+      for (final listener in List.of(_connectListeners)) {
+        listener();
+      }
     });
 
     socket.onConnectError((err) {
@@ -209,4 +229,7 @@ class DeviceSession {
   }
 
   String _deviceLabel() => kIsWeb ? 'web' : defaultTargetPlatform.name;
+
+  /// "Show when I'm online" (Settings); see PresenceService.
+  bool get _presenceVisible => AppState.instance.prefs?.getBool('boloai.pref.online') ?? true;
 }

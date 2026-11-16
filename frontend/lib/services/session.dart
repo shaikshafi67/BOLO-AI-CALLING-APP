@@ -7,6 +7,8 @@ import 'auth_service.dart';
 import 'device_session.dart';
 import 'history_store.dart';
 import 'incoming_calls.dart';
+import 'presence_service.dart';
+import 'push_service.dart';
 import 'user_service.dart';
 
 /// The signed-in user as the app sees it. Combines the Firebase account
@@ -39,11 +41,15 @@ class Session extends ChangeNotifier {
       AuthService().signOut();
     };
     DeviceSession.instance.ready.addListener(_onDeviceReady);
+    DeviceSession.instance.onEvent('notifications:changed', (_) => AppState.instance.notifications.load());
     IncomingCalls.instance.attach();
+    PresenceService.instance.attach();
     _sub = auth.authStateChanges().listen((u) {
       if (u == null) {
         DeviceSession.instance.stop();
         HistoryStore.instance.clear();
+        AppState.instance.notifications.clear();
+        PresenceService.instance.clear();
       } else {
         DeviceSession.instance.start(u);
       }
@@ -56,6 +62,8 @@ class Session extends ChangeNotifier {
     if (!DeviceSession.instance.ready.value) return;
     _syncProfile();
     HistoryStore.instance.load();
+    AppState.instance.notifications.load();
+    PushService.instance.register();
   }
 
   /// Loads the backend profile, creating it for accounts that don't have one.
@@ -113,11 +121,14 @@ class Session extends ChangeNotifier {
     }
   }
 
-  void setNameLocally(String name) {
+  /// Shows the new name right away and saves it to the backend profile
+  /// (Firebase already has it). Throws [ApiException] if the backend refused.
+  Future<void> setName(String name) async {
     final u = _user;
     if (u == null) return;
     _user = u.copyWith(name: name);
     notifyListeners();
+    await UserService().updateName(name);
   }
 
   Future<void> signOut() async {

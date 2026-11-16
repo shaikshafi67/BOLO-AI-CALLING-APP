@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../services/presence_service.dart';
+import '../../services/push_service.dart';
 import '../../core/app_state.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
@@ -119,7 +121,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.notifications_none_rounded,
                 title: 'Notifications',
                 children: [
-                  _switch('Incoming calls', 'Ring and notify for new calls', 'nCalls', true),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Incoming calls'),
+                    subtitle: Text(PushService.instance.supported
+                        ? 'Ring this device, even when BoloAI is closed'
+                        : 'Ring while BoloAI is open'),
+                    value: PushService.enabled,
+                    onChanged: (v) => setState(() => PushService.instance.setEnabled(v)),
+                  ),
                   _switch('Missed calls', 'Tell me when I miss a call', 'nMissed', true),
                   _switch('Contact requests', 'When someone wants to add me', 'nContacts', true),
                 ],
@@ -129,7 +139,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.shield_outlined,
                 title: 'Privacy',
                 children: [
-                  _switch('Show when I’m online', 'Contacts can see your online status', 'online', true),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Show when I’m online'),
+                    subtitle: const Text('Contacts can see when you’re online or on a call'),
+                    value: PresenceService.visible,
+                    onChanged: (v) => setState(() => PresenceService.instance.setVisible(v)),
+                  ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Save call transcripts'),

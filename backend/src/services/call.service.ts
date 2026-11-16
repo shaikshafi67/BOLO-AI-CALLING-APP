@@ -69,10 +69,17 @@ export const callService = {
          c.*,
          CASE WHEN c.caller_id = $1 THEN receiver.id ELSE caller.id END AS participant_id,
          CASE WHEN c.caller_id = $1 THEN receiver.name ELSE caller.name END AS participant_name,
-         CASE WHEN c.caller_id = $1 THEN 'outgoing' ELSE 'incoming' END AS direction
+         CASE WHEN c.caller_id = $1 THEN 'outgoing' ELSE 'incoming' END AS direction,
+         t.lines, t.avg_translate_ms, t.avg_voice_ms
        FROM calls c
        JOIN users caller ON caller.id = c.caller_id
        JOIN users receiver ON receiver.id = c.receiver_id
+       LEFT JOIN LATERAL (
+         SELECT count(*)::int AS lines,
+                round(avg(translate_ms))::int AS avg_translate_ms,
+                round(avg(voice_ms))::int AS avg_voice_ms
+         FROM translations WHERE call_id = c.id
+       ) t ON true
        WHERE c.caller_id = $1 OR c.receiver_id = $1
        ORDER BY c.started_at DESC
        LIMIT 50`,
@@ -83,6 +90,9 @@ export const callService = {
       participantId: row.participant_id,
       participantName: row.participant_name,
       direction: row.direction,
+      translatedLines: row.lines ?? 0,
+      avgTranslateMs: row.avg_translate_ms ?? null,
+      avgVoiceMs: row.avg_voice_ms ?? null,
     }));
   },
 };

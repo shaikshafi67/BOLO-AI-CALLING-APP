@@ -10,7 +10,9 @@ export const pgSessionStore: SessionStore = {
        INSERT INTO user_sessions (firebase_uid, session_id, device, claimed_at)
        VALUES ($1, $2, $3, now())
        ON CONFLICT (firebase_uid)
-       DO UPDATE SET session_id = EXCLUDED.session_id, device = EXCLUDED.device, claimed_at = now()
+       DO UPDATE SET session_id = EXCLUDED.session_id, device = EXCLUDED.device, claimed_at = now(),
+         -- A different device: the old device's push token no longer applies.
+         push_token = CASE WHEN user_sessions.session_id = EXCLUDED.session_id THEN user_sessions.push_token END
        RETURNING (SELECT session_id FROM previous) AS previous`,
       [uid, sessionId, device ?? null],
     );
@@ -24,5 +26,18 @@ export const pgSessionStore: SessionStore = {
 
   async release(uid, sessionId) {
     await pool.query('DELETE FROM user_sessions WHERE firebase_uid = $1 AND session_id = $2', [uid, sessionId]);
+  },
+
+  async setPushToken(uid, sessionId, token) {
+    const result = await pool.query(
+      'UPDATE user_sessions SET push_token = $3 WHERE firebase_uid = $1 AND session_id = $2',
+      [uid, sessionId, token],
+    );
+    return (result.rowCount ?? 0) > 0;
+  },
+
+  async pushToken(uid) {
+    const result = await pool.query('SELECT push_token FROM user_sessions WHERE firebase_uid = $1', [uid]);
+    return result.rows[0]?.push_token ?? null;
   },
 };

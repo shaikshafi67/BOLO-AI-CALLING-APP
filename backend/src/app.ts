@@ -6,6 +6,7 @@ import cors from 'cors';
 import { healthRouter } from './routes/health.routes';
 import { userRouter } from './routes/user.routes';
 import { callRouter } from './routes/call.routes';
+import { notificationRouter } from './routes/notification.routes';
 import { createSessionRouter } from './routes/session.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { pgSessionStore } from './services/session.service';
@@ -25,6 +26,7 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/sessions', createSessionRouter(pgSessionStore, requireAuth, options.onSessionClaimed ?? (() => undefined)));
   app.use('/api/users', userRouter);
   app.use('/api/calls', callRouter);
+  app.use('/api/notifications', notificationRouter);
 
   // Serves the built Flutter web app (frontend/build/web) from the same
   // address as the API, so one public link (e.g. a tunnel) runs everything.

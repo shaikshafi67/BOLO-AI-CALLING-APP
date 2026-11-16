@@ -16,4 +16,8 @@ export interface CallHistoryEntry extends Call {
   participantId: string;
   participantName: string;
   direction: 'incoming' | 'outgoing';
+  /// Translated sentences in the call and their average delays (null when none).
+  translatedLines: number;
+  avgTranslateMs: number | null;
+  avgVoiceMs: number | null;
 }

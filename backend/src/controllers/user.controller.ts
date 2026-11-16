@@ -3,6 +3,8 @@ import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import { userService } from '../services/user.service';
 import { supportedLanguageCodes, isSupportedLanguageCode } from '../config/supportedLanguages';
 
+const MAX_NAME_LENGTH = 80;
+
 export const userController = {
   async createProfile(req: AuthenticatedRequest, res: Response) {
     const { name, preferredLanguage } = req.body ?? {};
@@ -47,6 +49,21 @@ export const userController = {
       return;
     }
     const user = await userService.updatePreferredLanguage(req.firebaseUid!, preferredLanguage);
+    if (!user) {
+      res.status(404).json({ error: 'Profile not found' });
+      return;
+    }
+    res.json(user);
+  },
+
+  async updateName(req: AuthenticatedRequest, res: Response) {
+    const { name } = req.body ?? {};
+    const trimmed = typeof name === 'string' ? name.trim() : '';
+    if (trimmed.length < 2 || trimmed.length > MAX_NAME_LENGTH) {
+      res.status(400).json({ error: `name must be 2-${MAX_NAME_LENGTH} characters` });
+      return;
+    }
+    const user = await userService.updateName(req.firebaseUid!, trimmed);
     if (!user) {
       res.status(404).json({ error: 'Profile not found' });
       return;

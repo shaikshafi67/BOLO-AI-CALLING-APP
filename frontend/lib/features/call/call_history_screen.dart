@@ -65,6 +65,8 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
                 _detail(context, 'Duration', c.duration > Duration.zero ? formatDuration(c.duration) : '—'),
                 _detail(context, 'Date', '${formatCallDate(c.timestamp)}, ${formatTime(c.timestamp)}'),
                 _detail(context, 'Translated lines', '${c.translatedLines}'),
+                if (c.translationDelay != null)
+                  _detail(context, 'Translation delay', '${(c.translationDelay!.inMilliseconds / 1000).toStringAsFixed(1)} s on average'),
               ]),
               const SizedBox(height: 12),
               Text('Call transcripts will appear here once live translation is available.',

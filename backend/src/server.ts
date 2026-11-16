@@ -6,6 +6,7 @@ import { pgSessionStore } from './services/session.service';
 import { pgCallRecorder } from './services/callRecorder.service';
 import { userService } from './services/user.service';
 import { GoogleTranslationEngine } from './translation/googleEngine';
+import { firebasePush } from './push/firebasePush';
 
 const port = Number(process.env.PORT ?? 4000);
 
@@ -24,6 +25,7 @@ const signaling = attachSignaling(server, {
   sessions: pgSessionStore,
   calls: pgCallRecorder,
   translation: new GoogleTranslationEngine(),
+  push: firebasePush(pgSessionStore),
   resolveUser: async (userId) => {
     const user = await userService.getById(userId);
     return user ? { uid: user.firebaseUid } : null;

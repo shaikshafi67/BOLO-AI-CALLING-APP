@@ -611,7 +611,7 @@ class CallSession extends ChangeNotifier {
       return null;
     }
     return switch (reply['error']) {
-      'offline' => '$name isn\u2019t online right now. Share the room code to call them.',
+      'offline' => '$name isn\u2019t online and can\u2019t get call notifications. Share the room code to call them.',
       'busy' => '$name is on another call. Try again soon.',
       'not_found' => 'This person isn\u2019t on BoloAI any more.',
       _ => 'Couldn\u2019t ring $name. Share the room code instead.',

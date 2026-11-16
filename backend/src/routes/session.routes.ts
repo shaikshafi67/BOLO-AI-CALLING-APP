@@ -4,6 +4,8 @@ import { SESSION_ID_PATTERN, SessionStore } from '../sessions/sessionStore';
 
 /// POST   /api/sessions  { sessionId, device? }  claim this device after sign-in
 /// DELETE /api/sessions  (X-Session-Id)          release it on sign-out
+/// PUT    /api/sessions/push-token  { token }   (X-Session-Id)  where to push
+///        incoming calls when the app is closed; `token: null` stops pushes
 ///
 /// [onClaimed] signs the account's other devices out in real time
 /// (the signaling server sends them `session:revoked`).
@@ -25,6 +27,20 @@ export function createSessionRouter(
     const previous = await store.claim(req.firebaseUid!, sessionId, deviceLabel);
     onClaimed(req.firebaseUid!, sessionId);
     res.json({ ok: true, signedOutOtherDevice: previous !== null && previous !== sessionId });
+  });
+
+  router.put('/push-token', async (req: AuthenticatedRequest, res: Response) => {
+    const sessionId = req.header('x-session-id');
+    const { token } = req.body ?? {};
+    if (token !== null && (typeof token !== 'string' || token.length === 0 || token.length > 4096)) {
+      res.status(400).json({ error: 'token must be a push token string or null' });
+      return;
+    }
+    if (!sessionId || !(await store.setPushToken(req.firebaseUid!, sessionId, token))) {
+      res.status(401).json({ error: 'session_inactive', message: 'Claim a session with POST /api/sessions first.' });
+      return;
+    }
+    res.status(204).end();
   });
 
   router.delete('/', async (req: AuthenticatedRequest, res: Response) => {

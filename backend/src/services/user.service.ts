@@ -44,6 +44,11 @@ export const userService = {
     return result.rows[0] ? rowToUser(result.rows[0]) : null;
   },
 
+  async updateName(firebaseUid: string, name: string): Promise<User | null> {
+    const result = await pool.query(`UPDATE users SET name = $2 WHERE firebase_uid = $1 RETURNING *`, [firebaseUid, name]);
+    return result.rows[0] ? rowToUser(result.rows[0]) : null;
+  },
+
   async search(query: string, excludeFirebaseUid: string): Promise<User[]> {
     const result = await pool.query(
       `SELECT * FROM users

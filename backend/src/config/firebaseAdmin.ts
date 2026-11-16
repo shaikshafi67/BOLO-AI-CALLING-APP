@@ -4,7 +4,7 @@ import { env } from './env';
 
 let app: App | undefined;
 
-function getApp(): App {
+export function getFirebaseApp(): App {
   if (!app) {
     app =
       getApps()[0] ??
@@ -20,5 +20,5 @@ function getApp(): App {
 }
 
 export function getFirebaseAuth(): Auth {
-  return getAuth(getApp());
+  return getAuth(getFirebaseApp());
 }

@@ -1,6 +1,7 @@
 import { pool } from '../config/db';
 import { CallRecorder } from '../websocket/callRecorder';
 import { callService } from './call.service';
+import { notificationService } from './notification.service';
 import { userService } from './user.service';
 
 /// Records calls in PostgreSQL so they show up in both people's history.
@@ -28,9 +29,9 @@ export const pgCallRecorder: CallRecorder = {
   },
   async translation(callId, line) {
     await pool.query(
-      `INSERT INTO translations (call_id, source_language, target_language, source_text, translated_text)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [callId, line.sourceLanguage, line.targetLanguage, line.sourceText, line.translatedText],
+      `INSERT INTO translations (call_id, source_language, target_language, source_text, translated_text, translate_ms, voice_ms)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [callId, line.sourceLanguage, line.targetLanguage, line.sourceText, line.translatedText, line.translateMs, line.voiceMs],
     );
   },
   async unanswered(call) {
@@ -48,5 +49,14 @@ export const pgCallRecorder: CallRecorder = {
       status: call.status,
     });
     await callService.updateStatus(created.id, call.status);
+    if (call.status === 'missed') {
+      await notificationService.create({
+        userId: receiver.id,
+        kind: 'missed_call',
+        title: 'Missed call',
+        message: `You missed a call from ${caller.name}.`,
+        contactId: caller.id,
+      });
+    }
   },
 };

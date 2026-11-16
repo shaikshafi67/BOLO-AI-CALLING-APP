@@ -8,7 +8,7 @@ BoloAI is a real-time 1:1 video/voice calling app that removes language barriers
 
 ## Status
 
-Auth (Firebase), one-device sessions, backend profiles, call history, people search, ringing a contact (Accept/Decline) and real 1:1 video/voice calls (WebRTC over the Socket.IO signaling server) work. Live AI translation (Phase 6) is built for the browser: speech is recognised, translated and spoken to the other person with live captions. It needs a Google Cloud key at `backend/secrets/gcp-service-account.json` (check with `npm run check:translation`); without one, calls carry the original audio and show "Translation unavailable".
+Auth (Firebase), one-device sessions, backend profiles, call history, people search, online status, ringing a contact (Accept/Decline, with push notifications when their app is closed), server-side missed-call notifications and real 1:1 video/voice calls (WebRTC over the Socket.IO signaling server) work. Live AI translation (Phase 6) works in the browser and the Android app: speech is recognised, translated and spoken to the other person with live captions, and each sentence's delay is logged and saved. It needs a Google Cloud key at `backend/secrets/gcp-service-account.json` (check with `npm run check:translation`); without one, calls carry the original audio and show "Translation unavailable".
 
 ## Tech Stack
 
@@ -82,11 +82,9 @@ cd frontend && flutter test
 
 ## Known Limitations
 
-- Live translation captures the microphone in the browser only; in the Android app you see captions but don't send speech or hear the translated voice yet.
-- Ringing a contact needs them to have the app open (no push notifications yet); otherwise share the room code.
-- Contacts are the people you've had calls with, plus search across registered users; there are no contact requests or online status.
-- Changing your name on the Profile screen updates Firebase only, not the backend profile (there is no rename endpoint yet).
-- Notifications (missed calls) live on the device only; they are not stored on the server.
+- Live translation runs in the browser and the Android app; the iOS and desktop apps show captions only.
+- Push notifications ring Android phones out of the box. On the web they need a Web Push key (`--dart-define=BOLOAI_FCM_VAPID_KEY=...`, see `docs/signaling.md`). The push opens the app; answering happens in the app.
+- Contacts are the people you've had calls with, plus search across registered users; there are no contact requests.
 - No TURN server is configured by default. Calls work on the same network and behind most home routers; set `TURN_SERVER_URL`/`TURN_USERNAME`/`TURN_PASSWORD` in `backend/.env` for calls across mobile data or strict NATs (see `docs/signaling.md`).
 - Browsers only allow the camera on `https://` or `localhost`.
 - `firebase_core_web` is pinned to 3.10.0 via `dependency_overrides` in `frontend/pubspec.yaml` — 3.11.0 fails to compile for web (a dart2js `isA`/`JSObject` regression). Remove the override once upstream ships a fix.

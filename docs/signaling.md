@@ -21,7 +21,8 @@ final socket = IO.io('http://<backend>:4000', IO.OptionBuilder()
     .build());
 ```
 
-Missing or invalid tokens are refused with the error `unauthorized`.
+Missing or invalid tokens are refused with the error `unauthorized`. The app's always-on
+socket also sends `hidden: true` in `auth` when "Show when I'm online" is off in Settings.
 
 ## Events the app sends
 
@@ -34,10 +35,12 @@ All of these take an acknowledgement callback that receives `{ ok: true, ... }` 
 | `room:join` | `{ roomCode, language }` | `{ ok, roomCode, peers: [{ uid, name, language }], iceServers }` |
 | `signal` | `{ type: 'offer' \| 'answer' \| 'ice-candidate', data }` | `{ ok }` |
 | `language:update` | `{ language }` | `{ ok }` |
-| `call:invite` | `{ userId }` (a users.id) | `{ ok }` — errors `offline`, `busy`, `not_found`, `self`, `already_ringing` |
+| `call:invite` | `{ userId }` (a users.id) | `{ ok, pushed }` — errors `offline`, `busy`, `not_found`, `self`, `already_ringing` |
 | `call:decline` | `{ roomCode }` | `{ ok }` |
 | `message` | `{ kind: 'chat', text }` or `{ kind: 'state', state: { mic, camera, sharing } }` | `{ ok }` |
 | `room:leave` | — | `{ ok }` |
+| `presence:watch` | `{ userIds }` (users.ids, up to 100; replaces the previous list) | `{ ok, statuses: { [userId]: 'online' \| 'busy' \| 'offline' } }` |
+| `presence:visibility` | `{ visible }` | `{ ok }` |
 
 - `language` must be a supported code: `en`, `hi`, `te`, `ta`.
 - `iceServers` is the STUN/TURN list to pass to `createPeerConnection` (public STUN, plus
@@ -58,11 +61,34 @@ Possible errors: `invalid_language`, `invalid_room_code`, `not_found`, `full`
 | `signal` | `{ from, type, data }` | The other person sent an offer, answer or ICE candidate |
 | `peer:language` | `{ uid, language }` | The other person changed language |
 | `peer:left` | `{ uid }` | The other person left or disconnected |
-| `call:incoming` | `{ roomCode, from: { uid, name }, language }` | Someone is ringing you (sent to all your devices) |
+| `call:incoming` | `{ roomCode, from: { uid, name }, language }` | Someone is ringing you (sent to all your devices, and again to any device that connects while it still rings) |
 | `call:cancelled` | `{ roomCode }` | The caller hung up or nobody answered: stop ringing |
 | `call:declined` | `{ uid, name }` | (caller) They declined |
 | `call:unanswered` | `{ uid }` | (caller) No answer within 45 seconds |
 | `message` | chat or state, plus `{ from, name, at }` | In-call chat / the other person's mic, camera, screen-share state |
+| `presence:update` | `{ userId, status }` | Someone you watch came online, started/ended a call, hid their status or left |
+| `notifications:changed` | — | A notification was added (e.g. a missed call): reload `GET /api/notifications` |
+
+## Online status
+
+`online` means the person has the app open, `busy` that they're in a call, `offline` that the
+app is closed or they turned off "Show when I'm online". The Flutter app watches everyone in
+its contacts plus the current search results (`lib/services/presence_service.dart`).
+
+## Ringing a closed app (push notifications)
+
+When `call:invite` targets someone with no connected device, the server pushes
+"<name> is calling" through Firebase Cloud Messaging to the push token of their signed-in
+device (`PUT /api/sessions/push-token`, stored on the `user_sessions` row, so signing in
+elsewhere drops it). The invite then rings as usual (`pushed: true`). Tapping the push opens
+the app; its socket connects and receives `call:incoming`, since the invite is still
+ringing. If nobody answers, a "Missed call" push replaces the ringing one (same tag), and the
+missed call is stored in `notifications`. Without a token the reply is `offline`.
+
+Android needs nothing extra. The web needs a Web Push key from the Firebase console
+(Project settings → Cloud Messaging → Web Push certificates), passed to the build with
+`--dart-define=BOLOAI_FCM_VAPID_KEY=...`; `frontend/web/firebase-messaging-sw.js` shows the
+notifications while the tab is closed.
 
 ## Typical call flow
 
@@ -113,8 +139,10 @@ use the Android app with `--dart-define=BOLOAI_API_URL=http://<PC IP>:4000` inst
 
 The app asks `translation:start` (reply `{ ok, available }`; `available` is false until the
 Google Cloud key is configured). While the call is connected, the mic is on and translation
-isn't paused, the browser streams its microphone as binary `audio` chunks: 16 kHz, mono,
-16-bit PCM, about 100 ms each. `translation:stop` closes the speaker's recognition stream
+isn't paused, the app streams its microphone as binary `audio` chunks: 16 kHz, mono,
+16-bit PCM, about 100 ms each. The browser downsamples with an AudioWorklet; the Android app
+taps the WebRTC microphone track in `MainActivity.kt`, so the call and translation share one
+microphone, and plays the translated voice there too. `translation:stop` closes the speaker's recognition stream
 (sent when muting or pausing). Nothing is sent to Google while someone is alone in the room.
 
 The server (`backend/src/translation/`) runs Google Speech-to-Text streaming in the speaker's
@@ -126,5 +154,8 @@ language, translates each finished sentence into the listener's language, and sy
 | `translation:audio` | `{ id, audio (MP3 bytes), mime }` | The listener only |
 | `translation:status` | `{ available: false, reason }` | A service failed; the call continues without translation |
 
-Finished sentences are stored as text in the `translations` table (never audio). Check the
+Finished sentences are stored as text in the `translations` table (never audio), with
+`translate_ms` (end of sentence → translated caption) and `voice_ms` (→ translated voice
+ready). Each sentence's timings are also logged, and call history (`GET /api/calls`)
+reports `translatedLines`, `avgTranslateMs` and `avgVoiceMs` per call. Check the
 Google setup with `npm run check:translation` in `backend/`.

@@ -16,6 +16,10 @@ export interface TranslatedLine {
   targetLanguage: string;
   sourceText: string;
   translatedText: string;
+  /// Final transcript -> translated caption.
+  translateMs: number;
+  /// Final transcript -> translated voice ready; null when no voice was made.
+  voiceMs: number | null;
 }
 
 export interface PipelineOutput {
@@ -140,24 +144,34 @@ export class LivePipeline {
       this.out.toRoom(speaker.roomCode, 'translation:status', { available: false, reason: 'translate_failed' });
       return;
     }
-    this.caption(state, sentence, text, translated, true, this.now() - started);
+    const translateMs = this.now() - started;
+    this.caption(state, sentence, text, translated, true, translateMs);
+
+    let voiceMs: number | null = null;
+    if (!sameLanguage) {
+      try {
+        const audio = await this.engine.synthesize(translated, listenerLanguage);
+        this.out.toOthers(speaker.socketId, speaker.roomCode, 'translation:audio', { id, audio, mime: 'audio/mpeg' });
+        voiceMs = this.now() - started;
+      } catch (error) {
+        // Captions still work without the voice.
+        console.error('[translation] speech synthesis failed', error);
+      }
+    }
+    // Logged per sentence and saved with the call (requirements: latency is measured, not promised).
+    console.log(
+      `[translation] ${speaker.roomCode} ${speaker.language}→${listenerLanguage} caption ${translateMs} ms` +
+        (voiceMs === null ? '' : `, voice ${voiceMs} ms`),
+    );
     this.out.translated?.({
       roomCode: speaker.roomCode,
       sourceLanguage: speaker.language,
       targetLanguage: listenerLanguage,
       sourceText: text,
       translatedText: translated,
+      translateMs,
+      voiceMs,
     });
-    if (sameLanguage) return;
-
-    try {
-      const audio = await this.engine.synthesize(translated, listenerLanguage);
-      this.out.toOthers(speaker.socketId, speaker.roomCode, 'translation:audio', { id, audio, mime: 'audio/mpeg' });
-      console.log(`[translation] ${speaker.roomCode} ${speaker.language}→${listenerLanguage} ready in ${this.now() - started} ms`);
-    } catch (error) {
-      // Captions still work without the voice.
-      console.error('[translation] speech synthesis failed', error);
-    }
   }
 
   private failed(state: SpeakerState, stream: RecognitionStream, error: Error & { code?: number }) {

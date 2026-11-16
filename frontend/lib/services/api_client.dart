@@ -26,6 +26,8 @@ class ApiClient {
   static Future<dynamic> get(String path) => _send('GET', path);
   static Future<dynamic> post(String path, Map<String, dynamic> body) => _send('POST', path, body);
   static Future<dynamic> patch(String path, Map<String, dynamic> body) => _send('PATCH', path, body);
+  static Future<dynamic> put(String path, Map<String, dynamic> body) => _send('PUT', path, body);
+  static Future<dynamic> delete(String path) => _send('DELETE', path);
 
   static Future<dynamic> _send(String method, String path, [Map<String, dynamic>? body]) async {
     final user = FirebaseAuth.instance.currentUser;

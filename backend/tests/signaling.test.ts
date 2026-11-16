@@ -4,6 +4,7 @@ import { io as connect, Socket } from 'socket.io-client';
 import { attachSignaling, TokenVerifier } from '../src/websocket/signaling';
 import type { CallRecorder } from '../src/websocket/callRecorder';
 import type { TranslationEngine } from '../src/translation/engine';
+import type { PushSender } from '../src/push/pushSender';
 
 // Stand-in for Firebase Admin: tokens look like "valid:<uid>:<name>".
 const fakeVerifier: TokenVerifier = async (token) => {
@@ -49,10 +50,27 @@ const fakeRecorder: CallRecorder = {
   },
 };
 
+// Stand-in for Firebase Cloud Messaging: only u9 has a phone with a push token.
+let pushes: string[] = [];
+const fakePush: PushSender = {
+  async send(uid, message) {
+    if (uid !== 'u9') return false;
+    pushes.push(`${message.data.type} ${uid}: ${message.title}`);
+    return true;
+  },
+};
+
 beforeEach(async () => {
   server = http.createServer();
   recorded = [];
-  const { io } = attachSignaling(server, { verifyToken: fakeVerifier, calls: fakeRecorder, inviteTimeoutMs: 400, translation: fakeTranslation });
+  pushes = [];
+  const { io } = attachSignaling(server, {
+    verifyToken: fakeVerifier,
+    calls: fakeRecorder,
+    inviteTimeoutMs: 400,
+    translation: fakeTranslation,
+    push: fakePush,
+  });
   closeIo = () => io.close();
   await new Promise<void>((resolve) => server.listen(0, resolve));
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -228,7 +246,7 @@ describe('ringing a contact', () => {
     const { roomCode } = await emit(a, 'room:create', { language: 'hi' });
 
     const incoming = next(b, 'call:incoming');
-    expect(await emit(a, 'call:invite', { userId: 'u2' })).toEqual({ ok: true });
+    expect(await emit(a, 'call:invite', { userId: 'u2' })).toEqual({ ok: true, pushed: false });
     expect(await incoming).toEqual({ roomCode, from: { uid: 'u1', name: 'A' }, language: 'hi' });
     expect(await emit(a, 'call:invite', { userId: 'u2' })).toEqual({ ok: false, error: 'already_ringing' });
 
@@ -266,6 +284,70 @@ describe('ringing a contact', () => {
     expect(await unanswered).toEqual({ uid: 'u2' });
     expect(await cancelledAgain).toEqual({ roomCode: second.roomCode });
     await waitFor(() => recorded.filter((r) => r === 'missed u1 -> u2').length === 2);
+  });
+
+  test('a missed call tells the callee\'s open app to reload its notifications', async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    await emit(a, 'room:create', { language: 'hi' });
+    const changed = next(b, 'notifications:changed');
+    await emit(a, 'call:invite', { userId: 'u2' });
+    await changed;
+  });
+});
+
+describe('push notifications', () => {
+  test('rings a closed app with a push; opening the app rings it there', async () => {
+    const a = await client('valid:u1:A');
+    const { roomCode } = await emit(a, 'room:create', { language: 'hi' });
+    expect(await emit(a, 'call:invite', { userId: 'u9' })).toEqual({ ok: true, pushed: true });
+    expect(pushes).toEqual(['call u9: A is calling']);
+
+    // The callee opens the app from the notification while it still rings.
+    const phone = connect(url, { auth: { token: 'valid:u9:N' }, transports: ['websocket'], reconnection: false });
+    clients.push(phone);
+    expect(await next(phone, 'call:incoming')).toEqual({ roomCode, from: { uid: 'u1', name: 'A' }, language: 'hi' });
+    expect(await emit(phone, 'room:join', { roomCode, language: 'en' })).toMatchObject({ ok: true });
+    await waitFor(() => recorded.includes('started u1(hi) -> u9(en)'));
+  });
+
+  test('an unanswered push becomes a missed-call push', async () => {
+    const a = await client('valid:u1:A');
+    await emit(a, 'room:create', { language: 'hi' });
+    await emit(a, 'call:invite', { userId: 'u9' });
+    await waitFor(() => pushes.length === 2);
+    expect(pushes[1]).toBe('missed_call u9: Missed call');
+    expect(recorded).toContain('missed u1 -> u9');
+  });
+});
+
+describe('online status', () => {
+  test('watchers see people come online, get busy, hide and leave', async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    expect(await emit(a, 'presence:watch', { userIds: ['u2', 'u3'] })).toEqual({ ok: true, statuses: { u2: 'online', u3: 'offline' } });
+
+    let update = next(a, 'presence:update');
+    const c = await client('valid:u3:C');
+    expect(await update).toEqual({ userId: 'u3', status: 'online' });
+
+    update = next(a, 'presence:update');
+    await emit(b, 'room:create', { language: 'en' });
+    expect(await update).toEqual({ userId: 'u2', status: 'busy' });
+
+    update = next(a, 'presence:update');
+    await emit(b, 'presence:visibility', { visible: false });
+    expect(await update).toEqual({ userId: 'u2', status: 'offline' });
+
+    update = next(a, 'presence:update');
+    c.disconnect();
+    expect(await update).toEqual({ userId: 'u3', status: 'offline' });
+  });
+
+  test('people who hide their status look offline from the start', async () => {
+    const a = await client('valid:u1:A');
+    const hidden = connect(url, { auth: { token: 'valid:u2:B', hidden: true }, transports: ['websocket'], reconnection: false });
+    clients.push(hidden);
+    await next(hidden, 'connect');
+    expect(await emit(a, 'presence:watch', { userIds: ['u2'] })).toEqual({ ok: true, statuses: { u2: 'offline' } });
   });
 });
 

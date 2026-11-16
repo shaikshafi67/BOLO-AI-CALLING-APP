@@ -19,6 +19,20 @@ class AppNotification {
     this.read = false,
   });
 
+  /// A row from GET /api/notifications.
+  factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
+        id: '${j['id']}',
+        kind: switch (j['kind']) {
+          'missed_call' => NotificationKind.missedCall,
+          _ => NotificationKind.system,
+        },
+        title: '${j['title'] ?? ''}',
+        message: '${j['message'] ?? ''}',
+        createdAt: DateTime.tryParse('${j['createdAt']}')?.toLocal() ?? DateTime.now(),
+        contactId: j['contactId'] as String?,
+        read: j['read'] == true,
+      );
+
   AppNotification markRead() => AppNotification(
         id: id,
         kind: kind,

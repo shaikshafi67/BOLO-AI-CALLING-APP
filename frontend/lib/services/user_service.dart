@@ -23,6 +23,9 @@ class UserService {
     }
   }
 
+  /// PATCH /api/users/me — the name other people see.
+  Future<void> updateName(String name) => ApiClient.patch('/api/users/me', {'name': name});
+
   /// PATCH /api/users/me/language
   Future<void> updateLanguage(String code) => ApiClient.patch('/api/users/me/language', {'preferredLanguage': code});
 

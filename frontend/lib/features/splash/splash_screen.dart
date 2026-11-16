@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/app_state.dart';
 import '../../core/theme.dart';
+import '../../services/incoming_calls.dart';
 import '../../services/session.dart';
 import '../../widgets/brand.dart';
 
@@ -31,6 +32,8 @@ class _SplashScreenState extends State<SplashScreen> {
     final signedIn = widget.isSignedInOverride?.call() ?? Session.instance.isSignedIn;
     final onboarded = AppState.instance.prefs?.getBool(onboardedKey) ?? false;
     context.go(signedIn ? '/home' : (onboarded ? '/login' : '/onboarding'));
+    // Opened from an incoming-call push: the call may already be ringing.
+    if (signedIn && IncomingCalls.instance.current != null) context.push('/incoming');
   }
 
   @override
