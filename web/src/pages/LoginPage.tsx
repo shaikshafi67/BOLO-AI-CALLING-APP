@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Lock, Mail } from 'lucide-react';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { Button } from '../components/ui/Button';
 import { Checkbox, Input } from '../components/ui/FormControls';
-import { GoogleIcon, PrototypeNotice } from '../components/ui/Misc';
+import { GoogleIcon } from '../components/ui/Misc';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -12,7 +12,7 @@ import { authService } from '../services/authService';
 import { EMAIL_PATTERN } from '../utils/validation';
 
 export default function LoginPage() {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, takeSignOutNotice } = useAuth();
   const { notify } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -27,6 +27,14 @@ export default function LoginPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSending, setResetSending] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Signed out because the account signed in on another device.
+  useEffect(() => {
+    const notice = takeSignOutNotice();
+    if (notice) setFormError(notice);
+    // Shown once, on arrival.
+  }, []);
 
   const validate = () => {
     const next: typeof errors = {};
@@ -40,12 +48,13 @@ export default function LoginPage() {
     e.preventDefault();
     if (!validate()) return;
     setLoading('email');
+    setFormError(null);
     try {
       await login(email, password, remember);
       notify('Welcome back to BoloAI!', 'success');
       navigate(redirectTo, { replace: true });
-    } catch {
-      notify('Could not sign in. Please try again.', 'error');
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Could not sign in. Please try again.');
     } finally {
       setLoading(null);
     }
@@ -53,10 +62,13 @@ export default function LoginPage() {
 
   const onGoogle = async () => {
     setLoading('google');
+    setFormError(null);
     try {
       await loginWithGoogle();
-      notify('Signed in with Google (demo mode).', 'success');
+      notify('Signed in with Google.', 'success');
       navigate(redirectTo, { replace: true });
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Google sign-in failed.');
     } finally {
       setLoading(null);
     }
@@ -66,10 +78,15 @@ export default function LoginPage() {
     e.preventDefault();
     if (!EMAIL_PATTERN.test(resetEmail)) return;
     setResetSending(true);
-    await authService.resetPassword(resetEmail);
-    setResetSending(false);
-    setResetOpen(false);
-    notify('Password reset will send an email once Firebase Auth is connected.', 'info');
+    try {
+      await authService.resetPassword(resetEmail);
+      setResetOpen(false);
+      notify(`If an account uses ${resetEmail}, a reset link is on its way. Check your inbox.`, 'success');
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Couldn’t send the reset email.', 'error');
+    } finally {
+      setResetSending(false);
+    }
   };
 
   return (
@@ -81,6 +98,12 @@ export default function LoginPage() {
       <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wider text-subtle">
         <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
       </div>
+
+      {formError && (
+        <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+          {formError}
+        </p>
+      )}
 
       <form onSubmit={onSubmit} noValidate className="space-y-4">
         <Input
@@ -127,11 +150,6 @@ export default function LoginPage() {
           Create account
         </Link>
       </p>
-
-      <PrototypeNotice className="mt-8">
-        <strong className="font-semibold">Demo sign-in.</strong> Authentication is simulated in this prototype. Any valid email and password
-        will open the app. Firebase Authentication will be connected next.
-      </PrototypeNotice>
 
       <Modal
         open={resetOpen}

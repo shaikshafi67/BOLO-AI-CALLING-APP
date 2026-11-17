@@ -6,24 +6,20 @@
 
 BoloAI is a video calling app that removes language barriers. Each person speaks their own language; BoloAI transcribes the speech, translates it, and plays it to the listener as translated voice with live captions.
 
-This folder is the **web frontend** for the university capstone project. It is a complete, responsive UI prototype. The AI and backend services are not connected yet, so calls, translation and data run on clearly labelled mock data.
+This folder is the **React web app** for the university capstone project. It uses the same backend as the Flutter app (`../backend`), so a web user and a Flutter user can call each other.
 
 ## Current status
 
-| Implemented in this web app | Needs backend / AI services (planned) |
+| Works now | Notes |
 |---|---|
-| 13 responsive screens with routing | Firebase Authentication |
-| Light, dark and system themes (saved locally) | WebRTC peer-to-peer video (Socket.IO signaling) |
-| Mock sign-in, register with password rules, route guards | Streaming Speech-to-Text |
-| Dashboard with stats, activity chart, recent calls | Translation API |
-| Start and join call flows with language settings | Text-to-Speech translated voice |
-| Video call screen: captions, translation panel, all call states | PostgreSQL-backed history, contacts, notifications |
-| Optional **real** camera preview via `getUserMedia` (stays on-device) | Automatic language detection |
-| Call history with search, filters, pagination | Screen sharing |
-| Contacts, profile editing, settings, notification centre | |
-| Service layer with `TODO` hooks for every integration | |
+| Firebase sign-in: email/password, Google, register, password reset | Same accounts as the Flutter app; one signed-in device per account |
+| Real 1:1 video and voice calls (WebRTC over the backend's Socket.IO call server) | Start a room, join with a code, or ring a contact (Accept / Decline) |
+| Call history, contacts, people search, online status | From `GET /api/calls`, `GET /api/users/search` and `presence:watch` |
+| Missed-call notifications | Stored on the server |
+| In-call chat, screen sharing, mute/camera/speaker | Interoperates with the Flutter app |
+| Live translation: captions and translated voice | Needs the Google Cloud key on the backend (`npm run check:translation`) |
 
-The UI marks unfinished features with "Backend coming soon" tags and prototype notices, so nothing claims the AI is working when it isn't.
+Start the backend first (`cd ../backend && npm run dev`, port 4000).
 
 ## Features
 
@@ -46,7 +42,7 @@ The UI marks unfinished features with "Backend coming soon" tags and prototype n
 
 - **Look:** warm paper background, a single ink-blue brand colour with a marigold accent, and warm charcoal in dark mode. No gradients or glow effects. Headlines use *Instrument Serif*; UI text uses *DM Sans*. Tokens live in `src/index.css`.
 - **Photos and video:** real stock footage from [Mixkit](https://mixkit.co) (free licence) in `public/media/`, listed in `public/media/CREDITS.md` with clip numbers. They're used in the landing hero (a call window with example subtitles), the "Who it's for" stories, a full-width video banner, the login panel, the dashboard, and the call screen.
-- **Demo call:** the demo contact *Marcus Bello* (English, London) "joins" with stock video. Other contacts show an avatar until WebRTC delivers a real stream. Default call languages are Hindi → English.
+- **Call screen:** shows a waiting state until WebRTC is connected; nobody joins yet. Default call languages are Hindi → English.
 - Autoplaying video is skipped for visitors who have turned on "reduce motion" in their system settings.
 - Stock people and scenarios are labelled as illustrations, not real users or customer stories.
 
@@ -72,10 +68,10 @@ web/
     ├── App.tsx             # providers + routes (pages are lazy-loaded)
     ├── index.css           # Tailwind + design tokens (light/dark), animations
     ├── types/              # User, Contact, Call, Participant, Translation, Notification, Language, CallSettings…
-    ├── data/               # all mock data (users, contacts, calls, stats, notifications, translations, languages)
+    ├── data/               # supported languages and stock media
     ├── services/           # authService, callService, translationService, speechService, userService, notificationService
     ├── context/            # Theme, Auth, CallSettings, Notifications, Toast
-    ├── hooks/              # useCallTimer, useMediaPreview, useDemoTranslation, usePersistentState
+    ├── hooks/              # useCallTimer, useMediaPreview, useTranslationFeed, usePersistentState
     ├── utils/              # formatting and validation helpers
     ├── components/
     │   ├── ui/             # Button, Card, Badge, Avatar, Input/Select/Toggle, Modal, Tooltip, Logo…

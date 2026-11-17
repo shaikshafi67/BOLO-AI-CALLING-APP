@@ -3,22 +3,59 @@ import { ArrowRight, Languages, LogIn, Video } from 'lucide-react';
 import { StatCard } from '../components/dashboard/StatCard';
 import { ActivityChart } from '../components/dashboard/ActivityChart';
 import { RecentCalls } from '../components/dashboard/RecentCalls';
-import { Avatar } from '../components/ui/Avatar';
 import { Badge } from '../components/ui/Badge';
-import { PrototypeNotice } from '../components/ui/Misc';
 import { LanguagePair } from '../components/translation/LanguageBits';
 import { useAuth } from '../context/AuthContext';
 import { useCallSettings } from '../context/CallSettingsContext';
-import { dashboardStats } from '../data/stats';
-import { calls } from '../data/calls';
-import { contacts } from '../data/contacts';
 import { media } from '../data/media';
+import { getLanguage } from '../data/languages';
+import { useHistory } from '../hooks/useHistory';
+import { usePresence } from '../services/presence';
+import { Avatar } from '../components/ui/Avatar';
+import type { Call, DashboardStat } from '../types';
 import { firstName, greeting } from '../utils/format';
+
+const DAY = 86_400_000;
+const minutesOf = (calls: Call[]) => calls.reduce((sum, c) => sum + Math.round(c.durationSeconds / 60), 0);
+
+/** The four figures, from your real call history. */
+function statsFor(calls: Call[]): DashboardStat[] {
+  const thisWeek = calls.filter((c) => Date.now() - new Date(c.startedAt).getTime() < 7 * DAY);
+  const counts = new Map<string, number>();
+  for (const c of calls) for (const l of new Set([c.sourceLanguage, c.targetLanguage])) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const translated = calls.filter((c) => c.translatedSegments > 0);
+  const none = 'No calls yet';
+  return [
+    { id: 'calls', label: 'Total Calls', value: String(calls.length), change: calls.length ? `+${thisWeek.length} this week` : none, trend: thisWeek.length ? 'up' : 'flat' },
+    { id: 'minutes', label: 'Call Minutes', value: String(minutesOf(calls)), change: calls.length ? `+${minutesOf(thisWeek)} this week` : none, trend: minutesOf(thisWeek) ? 'up' : 'flat' },
+    { id: 'languages', label: 'Languages Used', value: String(counts.size), change: top ? `${getLanguage(top as Call['sourceLanguage']).name} most used` : none, trend: 'flat' },
+    { id: 'sessions', label: 'Translation Sessions', value: String(translated.length), change: calls.length ? `${translated.reduce((s, c) => s + c.translatedSegments, 0)} lines translated` : none, trend: 'flat' },
+  ];
+}
+
+/** Minutes talked on each of the last 7 days, oldest first. */
+function weekly(calls: Call[]) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(today.getTime() - (6 - i) * DAY);
+    const minutes = minutesOf(calls.filter((c) => {
+      const d = new Date(c.startedAt);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime() === day.getTime();
+    }));
+    return { day: i === 6 ? 'Today' : day.toLocaleDateString('en-US', { weekday: 'short' }), minutes };
+  });
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const { settings } = useCallSettings();
-  const onlineContacts = contacts.filter((c) => c.status === 'online');
+  const { calls, contacts } = useHistory();
+  const presence = usePresence(contacts.map((c) => c.id));
+  const online = contacts.filter((c) => presence[c.id] === 'online' || presence[c.id] === 'busy');
+  const dashboardStats = statsFor(calls);
 
   return (
     <div className="space-y-6">
@@ -79,7 +116,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <ActivityChart />
+          <ActivityChart weeklyMinutes={weekly(calls)} />
         </div>
         <div className="card p-5 sm:p-6">
           <div className="mb-4 flex items-center justify-between">
@@ -88,29 +125,28 @@ export default function DashboardPage() {
               All contacts
             </Link>
           </div>
-          <ul className="space-y-1">
-            {onlineContacts.map((c) => (
-              <li key={c.id}>
-                <Link to={`/start-call?contact=${c.id}`} className="flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-surface-2">
-                  <Avatar name={c.fullName} size="sm" status={c.status} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-fg">{c.fullName}</p>
-                    <p className="text-xs text-subtle">{c.location}</p>
-                  </div>
-                  <Video className="size-4 text-subtle" aria-label={`Call ${c.fullName}`} />
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {online.length === 0 ? (
+            <p className="text-sm text-muted">No one is online right now. People you have calls with appear here when they’re online.</p>
+          ) : (
+            <ul className="space-y-1">
+              {online.map((c) => (
+                <li key={c.id}>
+                  <Link to={`/start-call?contact=${c.id}`} className="flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-surface-2">
+                    <Avatar name={c.fullName} size="sm" status={presence[c.id]} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-fg">{c.fullName}</p>
+                      <p className="text-xs text-subtle">{presence[c.id] === 'busy' ? 'On a call' : `Speaks ${getLanguage(c.preferredLanguage).name}`}</p>
+                    </div>
+                    <Video className="size-4 text-subtle" aria-label={`Call ${c.fullName}`} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
       <RecentCalls calls={calls.slice(0, 5)} />
-
-      <PrototypeNotice>
-        <strong className="font-semibold">Sample data.</strong> Statistics and call history on this dashboard are mock data. They’ll be loaded
-        from the BoloAI backend once the database is connected.
-      </PrototypeNotice>
     </div>
   );
 }

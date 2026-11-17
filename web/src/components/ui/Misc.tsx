@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Construction, FlaskConical } from 'lucide-react';
+import { Construction } from 'lucide-react';
 import { cn } from '../../utils/format';
 
 interface PageHeaderProps {
@@ -34,32 +34,6 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       <h3 className="text-base font-semibold text-fg">{title}</h3>
       {description && <p className="mt-1 max-w-sm text-sm text-muted">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
-    </div>
-  );
-}
-
-/**
- * Capstone requirement: clearly mark features that are UI-only today and
- * depend on backend / AI services that are not connected yet.
- */
-export function PrototypeNotice({ children, className }: { children?: ReactNode; className?: string }) {
-  return (
-    <div
-      className={cn(
-        'flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200',
-        className,
-      )}
-      role="note"
-    >
-      <FlaskConical className="mt-0.5 size-4 shrink-0" aria-hidden />
-      <p>
-        {children ?? (
-          <>
-            <strong className="font-semibold">Frontend prototype.</strong> Calls, speech recognition, translation and voice
-            synthesis are simulated with mock data. Backend integration is coming soon.
-          </>
-        )}
-      </p>
     </div>
   );
 }

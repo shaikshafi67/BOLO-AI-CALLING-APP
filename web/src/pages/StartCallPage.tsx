@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Copy, ShieldCheck, UserRound, Video } from 'lucide-react';
-import { PageHeader, PrototypeNotice } from '../components/ui/Misc';
+import { PageHeader } from '../components/ui/Misc';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Select } from '../components/ui/FormControls';
@@ -10,9 +10,9 @@ import { CallLanguageSettings } from '../components/call/CallLanguageSettings';
 import { useAuth } from '../context/AuthContext';
 import { useCallSettings } from '../context/CallSettingsContext';
 import { useToast } from '../context/ToastContext';
-import { callService } from '../services/callService';
-import { contacts } from '../data/contacts';
+import { CallSession } from '../services/callSession';
 import { getLanguage } from '../data/languages';
+import { personById, useHistory } from '../hooks/useHistory';
 
 export default function StartCallPage() {
   const { user } = useAuth();
@@ -20,19 +20,35 @@ export default function StartCallPage() {
   const { notify } = useToast();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { contacts } = useHistory();
   const [contactId, setContactId] = useState(() => params.get('contact') ?? '');
   const [starting, setStarting] = useState(false);
 
+  // People you've called, plus someone picked from search (?contact=<id>).
+  const picked = personById(contactId);
+  const people = picked && !contacts.some((c) => c.id === picked.id) ? [picked, ...contacts] : contacts;
+
   const start = async () => {
     setStarting(true);
-    const roomCode = await callService.createRoom(settings);
-    navigate(`/call/${roomCode}`, { state: { contactId: contactId || undefined, isHost: true } });
+    try {
+      const session = await CallSession.start(settings.myLanguage);
+      const contact = personById(contactId);
+      if (contact) {
+        // Ring them into the room; if that fails the room stays open for the code.
+        const problem = await session.invite(contact.id, contact.fullName);
+        if (problem) notify(problem, 'warning');
+      }
+      navigate(`/call/${session.roomCode}`);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Couldn’t start the call.', 'error');
+      setStarting(false);
+    }
   };
 
   const copyInvite = async () => {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/join-call`);
-      notify('Invite link copied. Share the room code once your call starts.', 'success');
+      notify('Join link copied. Share the room code once your call starts.', 'success');
     } catch {
       notify('Clipboard is not available in this browser.', 'warning');
     }
@@ -64,7 +80,7 @@ export default function StartCallPage() {
             <CardHeader title="Who are you calling?" description="Optional. You can also share the room code." icon={<UserRound className="size-5" />} />
             <Select value={contactId} onChange={(e) => setContactId(e.target.value)} aria-label="Contact to call">
               <option value="">Anyone with the room code</option>
-              {contacts.map((c) => (
+              {people.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.fullName} · speaks {getLanguage(c.preferredLanguage).name}
                 </option>
@@ -85,9 +101,6 @@ export default function StartCallPage() {
               Invite link
             </Button>
           </div>
-          <PrototypeNotice>
-            The call screen is a working UI demo. Real peer-to-peer video starts once the WebRTC signaling server is connected.
-          </PrototypeNotice>
         </div>
       </div>
     </div>

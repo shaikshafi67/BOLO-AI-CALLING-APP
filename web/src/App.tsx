@@ -5,6 +5,8 @@ import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { CallSettingsProvider } from './context/CallSettingsContext';
 import { NotificationsProvider } from './context/NotificationsContext';
+import { IncomingCallProvider } from './context/IncomingCallContext';
+import { IncomingCallModal } from './components/call/IncomingCallModal';
 import { ToastProvider } from './context/ToastContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { GuestOnly, RequireAuth } from './components/layout/RouteGuards';
@@ -48,8 +50,10 @@ export default function App() {
         <AuthProvider>
           <CallSettingsProvider>
             <NotificationsProvider>
+              <IncomingCallProvider>
               <BrowserRouter>
                 <ScrollToTop />
+                <IncomingCallModal />
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
                     <Route path="/" element={<LandingPage />} />
@@ -75,6 +79,7 @@ export default function App() {
                   </Routes>
                 </Suspense>
               </BrowserRouter>
+              </IncomingCallProvider>
             </NotificationsProvider>
           </CallSettingsProvider>
         </AuthProvider>

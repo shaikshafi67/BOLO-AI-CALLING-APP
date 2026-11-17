@@ -122,7 +122,7 @@ export function TranslationPanel({ entries, status, sourceLanguage, targetLangua
 
       <footer className="flex items-start gap-2 border-t border-white/10 px-4 py-3 text-[11px] text-stone-400">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        Scripted English ↔ Hindi demo transcript. Live speech recognition and translation will appear here once the AI backend is connected.
+        Live speech recognition and translation will appear here once this web app is connected to the BoloAI backend.
       </footer>
     </section>
   );

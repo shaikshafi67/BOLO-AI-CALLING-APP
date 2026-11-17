@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Camera, CalendarDays, Globe2, Mail, Pencil, PhoneCall, Save, Languages, UserRound, X } from 'lucide-react';
 import { PageHeader } from '../components/ui/Misc';
 import { Button } from '../components/ui/Button';
@@ -11,9 +11,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { userService } from '../services/userService';
 import { getLanguage } from '../data/languages';
-import { dashboardStats } from '../data/stats';
 import type { LanguageCode, User } from '../types';
-import { EMAIL_PATTERN } from '../utils/validation';
+import { useHistory } from '../hooks/useHistory';
 
 const countries = ['India', 'United States', 'United Kingdom', 'Canada', 'Australia', 'United Arab Emirates', 'Singapore', 'Germany'];
 const MAX_PHOTO_BYTES = 600 * 1024;
@@ -25,7 +24,12 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<User | null>(user);
-  const [emailError, setEmailError] = useState<string>();
+  const { calls } = useHistory();
+
+  // The backend profile loads after sign-in; show it unless the user is editing.
+  useEffect(() => {
+    if (!editing) setDraft(user);
+  }, [user, editing]);
 
   if (!user || !draft) return null;
 
@@ -34,21 +38,26 @@ export default function ProfilePage() {
   const cancel = () => {
     setDraft(user);
     setEditing(false);
-    setEmailError(undefined);
   };
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
-    if (!EMAIL_PATTERN.test(draft.email)) {
-      setEmailError('Enter a valid email address.');
+    if (draft.fullName.trim().length < 2) {
+      notify('Please enter your full name.', 'warning');
       return;
     }
     setSaving(true);
-    const next = await userService.updateProfile(user, draft);
-    updateUser(next);
-    setSaving(false);
-    setEditing(false);
-    notify('Profile saved.', 'success');
+    try {
+      // Name and language go to Firebase and the backend profile, which other people see.
+      const next = await userService.updateProfile(user, { ...draft, fullName: draft.fullName.trim() });
+      updateUser(next);
+      setEditing(false);
+      notify('Profile saved.', 'success');
+    } catch {
+      notify('Couldn’t save your profile. Check your connection and try again.', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Photo is kept in this browser only until file storage is connected.
@@ -103,7 +112,7 @@ export default function ProfilePage() {
                 <dt className="flex items-center gap-1.5 text-xs text-subtle">
                   <PhoneCall className="size-3.5" /> Total calls
                 </dt>
-                <dd className="mt-1 text-lg font-semibold text-fg">{dashboardStats[0].value}</dd>
+                <dd className="mt-1 text-lg font-semibold text-fg">{calls.length}</dd>
               </div>
               <div>
                 <dt className="flex items-center gap-1.5 text-xs text-subtle">
@@ -133,18 +142,8 @@ export default function ProfilePage() {
           <form onSubmit={save} noValidate>
             <fieldset disabled={!editing} className="grid gap-4 sm:grid-cols-2">
               <Input label="Full name" value={draft.fullName} onChange={(e) => set('fullName', e.target.value)} icon={<UserRound className="size-4" />} />
-              <Input
-                label="Email"
-                type="email"
-                value={draft.email}
-                onChange={(e) => {
-                  set('email', e.target.value);
-                  setEmailError(undefined);
-                }}
-                icon={<Mail className="size-4" />}
-                error={emailError}
-              />
-              <LanguageSelect label="Preferred language" value={draft.preferredLanguage} onChange={(v: LanguageCode) => set('preferredLanguage', v)} allowPlanned />
+              <Input label="Email" type="email" value={draft.email} readOnly disabled hint="Your email can’t be changed here." icon={<Mail className="size-4" />} />
+              <LanguageSelect label="Preferred language" value={draft.preferredLanguage} onChange={(v: LanguageCode) => set('preferredLanguage', v)} />
               <Select label="Country" value={draft.country} onChange={(e) => set('country', e.target.value)} icon={<Globe2 className="size-4" />}>
                 {countries.map((c) => (
                   <option key={c}>{c}</option>

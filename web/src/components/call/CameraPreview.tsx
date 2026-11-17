@@ -15,7 +15,7 @@ interface CameraPreviewProps {
   onToggleSpeaker?: () => void;
 }
 
-/** Pre-call device check: mock preview with an opt-in real camera. */
+/** Pre-call device check: your camera, once you turn the preview on. */
 export function CameraPreview({ name, cameraOn, micOn, speakerOn, onToggleCamera, onToggleMic, onToggleSpeaker }: CameraPreviewProps) {
   const { videoRef, status, start, stop } = useMediaPreview();
 
@@ -39,7 +39,7 @@ export function CameraPreview({ name, cameraOn, micOn, speakerOn, onToggleCamera
           <Avatar name={name} size="xl" />
           {cameraOn ? (
             <div className="text-center">
-              <p className="text-sm text-stone-300">Camera preview (mock)</p>
+              <p className="text-sm text-stone-300">Check how you look before the call</p>
               {status === 'denied' && <p className="mt-1 text-xs text-amber-300">Camera permission was blocked. Check your browser settings.</p>}
               {status === 'unsupported' && <p className="mt-1 text-xs text-amber-300">This browser doesn’t support camera access.</p>}
               <button
@@ -49,7 +49,7 @@ export function CameraPreview({ name, cameraOn, micOn, speakerOn, onToggleCamera
                 className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-white hover:bg-white/20"
               >
                 {status === 'requesting' ? <Loader2 className="size-3.5 animate-spin" /> : <Camera className="size-3.5" />}
-                Use my real camera
+                Turn on camera preview
               </button>
             </div>
           ) : (

@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, BellOff, CheckCheck, PhoneIncoming, PhoneMissed, PhoneOff, Megaphone, Trash2, UserPlus, Video, X } from 'lucide-react';
+import { Bell, BellOff, CheckCheck, PhoneIncoming, PhoneMissed, PhoneOff, Megaphone, Trash2, UserPlus, Video } from 'lucide-react';
 import { PageHeader, EmptyState, Segmented } from '../components/ui/Misc';
 import { Button } from '../components/ui/Button';
 import { Tooltip } from '../components/ui/Tooltip';
 import { useNotifications } from '../context/NotificationsContext';
-import { useToast } from '../context/ToastContext';
 import type { AppNotification, NotificationType } from '../types';
 import { cn, formatRelative } from '../utils/format';
 
@@ -21,63 +20,16 @@ type Filter = 'all' | 'unread';
 
 export default function NotificationsPage() {
   const { items, unreadCount, markRead, markAllRead, remove } = useNotifications();
-  const { notify } = useToast();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>('all');
 
   const visible = filter === 'unread' ? items.filter((n) => !n.read) : items;
 
   const actions = (n: AppNotification) => {
-    if (n.type === 'incoming_call') {
-      return (
-        <div className="mt-3 flex gap-2">
-          <Button
-            size="sm"
-            variant="success"
-            leftIcon={<Video className="size-3.5" />}
-            onClick={() => {
-              markRead(n.id);
-              navigate('/call/BOLO-4829', { state: { contactId: 'c_01' } });
-            }}
-          >
-            Accept
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            leftIcon={<X className="size-3.5" />}
-            onClick={() => {
-              remove(n.id);
-              notify('Call declined.', 'info');
-            }}
-          >
-            Decline
-          </Button>
-        </div>
-      );
-    }
-    if (n.type === 'contact_request') {
-      return (
-        <div className="mt-3 flex gap-2">
-          <Button
-            size="sm"
-            onClick={() => {
-              remove(n.id);
-              notify(`${n.actorName ?? 'Contact'} added to your contacts.`, 'success');
-            }}
-          >
-            Accept
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => remove(n.id)}>
-            Ignore
-          </Button>
-        </div>
-      );
-    }
-    if (n.type === 'missed_call') {
+    if (n.type === 'missed_call' && n.contactId) {
       return (
         <div className="mt-3">
-          <Button size="sm" variant="secondary" leftIcon={<Video className="size-3.5" />} onClick={() => navigate('/start-call?contact=c_04')}>
+          <Button size="sm" variant="secondary" leftIcon={<Video className="size-3.5" />} onClick={() => navigate(`/start-call?contact=${n.contactId}`)}>
             Call back
           </Button>
         </div>

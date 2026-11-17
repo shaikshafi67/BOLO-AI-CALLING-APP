@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardPaste, Hash, LogIn } from 'lucide-react';
-import { PageHeader, PrototypeNotice } from '../components/ui/Misc';
+import { PageHeader } from '../components/ui/Misc';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/FormControls';
@@ -10,7 +10,7 @@ import { CallLanguageSettings } from '../components/call/CallLanguageSettings';
 import { useAuth } from '../context/AuthContext';
 import { useCallSettings } from '../context/CallSettingsContext';
 import { useToast } from '../context/ToastContext';
-import { callService } from '../services/callService';
+import { CallSession } from '../services/callSession';
 import { normalizeRoomCode, ROOM_CODE_PATTERN } from '../utils/format';
 
 export default function JoinCallPage() {
@@ -31,8 +31,13 @@ export default function JoinCallPage() {
     }
     setError(undefined);
     setJoining(true);
-    await callService.joinRoom(normalized);
-    navigate(`/call/${normalized}`);
+    try {
+      await CallSession.join(normalized, settings.myLanguage);
+      navigate(`/call/${normalized}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Couldn’t join the call.');
+      setJoining(false);
+    }
   };
 
   const paste = async () => {
@@ -79,7 +84,7 @@ export default function JoinCallPage() {
             <h2 className="mb-4 text-base font-semibold text-fg">Your languages</h2>
             <CallLanguageSettings showToggles={false} />
           </Card>
-          <PrototypeNotice>Any code in the format BOLO-1234 opens the demo call screen. Room lookup needs the signaling server.</PrototypeNotice>
+
         </div>
 
         <div className="lg:col-span-3 lg:order-1">

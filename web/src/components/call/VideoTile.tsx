@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { MicOff, VideoOff } from 'lucide-react';
 import { Avatar } from '../ui/Avatar';
 import { VoiceWave } from '../translation/TranslationStatusIndicator';
@@ -6,52 +7,49 @@ import { cn } from '../../utils/format';
 interface VideoTileProps {
   name: string;
   subtitle?: string;
+  /** Show the video (false shows the avatar). */
   cameraOn: boolean;
   muted?: boolean;
   speaking?: boolean;
   size?: 'main' | 'pip';
-  /** Demo footage standing in for the WebRTC stream. */
-  videoSrc?: string;
-  /** Still image (e.g. a poster frame) used when there's no video. */
-  imageSrc?: string;
+  /** The participant's camera (or shared screen) from WebRTC. */
+  stream?: MediaStream | null;
+  /** Mirror like a selfie (your own preview). */
+  mirror?: boolean;
+  /** Show the whole picture instead of filling the tile (shared screens). */
+  contain?: boolean;
   /** Must include positioning (e.g. "absolute inset-0" or "relative aspect-video"). */
   className: string;
 }
 
-/**
- * A participant's video. When WebRTC is connected, attach the remote
- * MediaStream to the <video> (srcObject) instead of the demo footage.
- */
-export function VideoTile({ name, subtitle, cameraOn, muted, speaking, size = 'main', videoSrc, imageSrc, className }: VideoTileProps) {
+/** A participant's video. Sound plays separately (see RemoteAudio), so the video is always muted. */
+export function VideoTile({ name, subtitle, cameraOn, muted, speaking, size = 'main', stream, mirror, contain, className }: VideoTileProps) {
   const isMain = size === 'main';
-  const hasMedia = !!(videoSrc || imageSrc);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const showVideo = cameraOn && !!stream;
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.srcObject !== (stream ?? null)) el.srcObject = stream ?? null;
+    if (stream) el.play().catch(() => undefined);
+  }, [stream, showVideo]);
 
   return (
     <div className={cn('overflow-hidden bg-stone-900', className)}>
-      {cameraOn && hasMedia ? (
-        videoSrc ? (
-          <video
-            src={videoSrc}
-            poster={imageSrc}
-            autoPlay
-            muted
-            loop
-            playsInline
-            className="absolute inset-0 size-full object-cover"
-            aria-label={`${name}'s video`}
-          />
-        ) : (
-          <img src={imageSrc} alt="" className="absolute inset-0 size-full object-cover" />
-        )
-      ) : cameraOn ? (
-        // No footage for this contact: plain placeholder until WebRTC provides a stream.
-        <div className="absolute inset-0 flex items-center justify-center bg-stone-800">
-          <Avatar name={name} size={isMain ? '2xl' : 'md'} className={cn('rounded-full', speaking && 'ring-4 ring-accent-400/80')} />
-        </div>
-      ) : (
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        hidden={!showVideo}
+        className={cn('absolute inset-0 size-full', contain ? 'object-contain' : 'object-cover', mirror && '-scale-x-100')}
+        aria-label={`${name}'s video`}
+      />
+      {!showVideo && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-stone-900">
-          <Avatar name={name} size={isMain ? 'xl' : 'sm'} />
-          {isMain && (
+          <Avatar name={name} size={isMain ? 'xl' : 'sm'} className={cn('rounded-full', speaking && 'ring-4 ring-accent-400/80')} />
+          {isMain && !cameraOn && (
             <p className="flex items-center gap-2 text-sm text-stone-400">
               <VideoOff className="size-4" aria-hidden /> Camera is off
             </p>
@@ -60,7 +58,7 @@ export function VideoTile({ name, subtitle, cameraOn, muted, speaking, size = 'm
       )}
 
       {/* Speaking outline */}
-      {speaking && cameraOn && <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-2 ring-inset ring-accent-400" aria-hidden />}
+      {speaking && showVideo && <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-2 ring-inset ring-accent-400" aria-hidden />}
 
       <div
         className={cn(
@@ -74,4 +72,22 @@ export function VideoTile({ name, subtitle, cameraOn, muted, speaking, size = 'm
       </div>
     </div>
   );
+}
+
+/** Plays the other person's voice. Reports when the browser blocks sound until a click. */
+export function RemoteAudio({ stream, muted, volume, onBlocked }: { stream: MediaStream | null; muted: boolean; volume: number; onBlocked: (blocked: boolean) => void }) {
+  const ref = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.srcObject = stream;
+    if (stream) el.play().then(() => onBlocked(false), () => onBlocked(true));
+  }, [stream, onBlocked]);
+
+  useEffect(() => {
+    if (ref.current) ref.current.volume = volume;
+  }, [volume]);
+
+  return <audio ref={ref} autoPlay muted={muted} hidden />;
 }

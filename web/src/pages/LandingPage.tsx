@@ -10,7 +10,7 @@ import { media } from '../data/media';
 const implemented = [
   'Complete responsive web app (13 screens)',
   'Light, dark and system themes',
-  'Sign-in, dashboard, contacts and call history (mock data)',
+  'Sign-in, dashboard, contacts and call history screens',
   'Call screen with captions, translation panel and every call state',
   'Optional real camera preview in the browser',
   'Service layer ready for the backend',

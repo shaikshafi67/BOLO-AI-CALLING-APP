@@ -4,7 +4,7 @@ export type PreviewStatus = 'off' | 'requesting' | 'live' | 'denied' | 'unsuppor
 
 /**
  * Optional real camera preview via getUserMedia. This is the same API the
- * WebRTC integration will use for the local stream, so it is real, not mocked.
+ * calls use for the local stream.
  * Nothing is sent anywhere; the stream stays in the browser.
  */
 export function useMediaPreview() {

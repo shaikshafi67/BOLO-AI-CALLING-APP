@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { weeklyMinutes } from '../../data/stats';
 import { cn } from '../../utils/format';
 
-/** Single-series bar chart of call minutes per weekday. */
-export function ActivityChart() {
+const noMinutes = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => ({ day, minutes: 0 }));
+
+/** Single-series bar chart of call minutes per weekday (zero until call history is connected). */
+export function ActivityChart({ weeklyMinutes = noMinutes }: { weeklyMinutes?: { day: string; minutes: number }[] }) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(...weeklyMinutes.map((d) => d.minutes));
-  const ceiling = Math.ceil(max / 25) * 25;
+  const ceiling = Math.max(25, Math.ceil(max / 25) * 25);
   const total = weeklyMinutes.reduce((s, d) => s + d.minutes, 0);
   const gridLines = [ceiling, ceiling / 2, 0];
 
@@ -14,7 +15,7 @@ export function ActivityChart() {
     <div className="card p-5 sm:p-6">
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-fg">Call minutes this week</h2>
+          <h2 className="text-base font-semibold text-fg">Call minutes, last 7 days</h2>
           <p className="mt-0.5 text-sm text-muted">{total} minutes total</p>
         </div>
       </div>

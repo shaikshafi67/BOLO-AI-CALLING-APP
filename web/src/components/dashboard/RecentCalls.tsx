@@ -19,8 +19,12 @@ export function RecentCalls({ calls }: { calls: Call[] }) {
         </Link>
       </div>
 
+      {calls.length === 0 && (
+        <p className="px-5 py-8 text-center text-sm text-muted sm:px-6">No calls yet. Start one, or join with a room code.</p>
+      )}
+
       {/* Desktop table */}
-      <div className="hidden overflow-x-auto md:block">
+      <div className={calls.length === 0 ? 'hidden' : 'hidden overflow-x-auto md:block'}>
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-2/60 text-xs uppercase tracking-wider text-subtle">
             <tr>

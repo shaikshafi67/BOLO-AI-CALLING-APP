@@ -28,7 +28,7 @@ export function ConnectionStatus({ state, className }: ConnectionStatusProps) {
 }
 
 /** Full-area overlay while connecting / reconnecting. */
-export function ConnectingOverlay({ state, contactName }: { state: 'connecting' | 'reconnecting'; contactName: string }) {
+export function ConnectingOverlay({ state, contactName, ringingName }: { state: 'connecting' | 'reconnecting'; contactName?: string; ringingName?: string | null }) {
   return (
     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 bg-stone-950/85 text-center backdrop-blur-sm animate-fade-in">
       <div className="relative">
@@ -37,9 +37,17 @@ export function ConnectingOverlay({ state, contactName }: { state: 'connecting' 
         <LogoMark className="relative size-16" />
       </div>
       <div>
-        <p className="text-lg font-semibold text-white">{state === 'connecting' ? `Connecting to ${contactName}…` : 'Reconnecting…'}</p>
+        <p className="text-lg font-semibold text-white">
+          {state === 'reconnecting' ? 'Reconnecting…' : contactName ? `Connecting to ${contactName}…` : ringingName ? `Ringing ${ringingName}…` : 'Waiting for someone to join…'}
+        </p>
         <p className="mt-1 text-sm text-stone-400">
-          {state === 'connecting' ? 'Setting up a secure connection and the translation pipeline' : 'Your network dropped. Trying to restore the call.'}
+          {state === 'reconnecting'
+            ? 'Your network dropped. Trying to restore the call.'
+            : contactName
+              ? 'Setting up a secure connection and the translation pipeline'
+              : ringingName
+                ? 'They’ll join when they answer.'
+                : 'Share the room code with the person you want to call.'}
         </p>
       </div>
       <Loader2 className="size-5 animate-spin text-brand-300" aria-hidden />

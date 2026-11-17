@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { CircleSlash, FlaskConical, MonitorUp, MoreHorizontal, RefreshCw, RotateCcw, Settings, Volume2, VolumeX, WifiOff } from 'lucide-react';
+import { MessageSquare, MonitorUp, MoreHorizontal, Settings, Volume2, VolumeX } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Tooltip } from '../ui/Tooltip';
 import { cn } from '../../utils/format';
-
-export type DemoScenario = 'normal' | 'unstable' | 'reconnecting' | 'translation-unavailable';
 
 interface MoreMenuProps {
   speakerOn: boolean;
   onToggleSpeaker: () => void;
   onScreenShare: () => void;
-  scenario: DemoScenario;
-  onScenario: (s: DemoScenario) => void;
+  onChat: () => void;
 }
 
 function Item({ icon, children, onClick, active }: { icon: ReactNode; children: ReactNode; onClick: () => void; active?: boolean }) {
@@ -29,7 +26,7 @@ function Item({ icon, children, onClick, active }: { icon: ReactNode; children: 
   );
 }
 
-export function MoreMenu({ speakerOn, onToggleSpeaker, onScreenShare, scenario, onScenario }: MoreMenuProps) {
+export function MoreMenu({ speakerOn, onToggleSpeaker, onScreenShare, onChat }: MoreMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -74,27 +71,14 @@ export function MoreMenu({ speakerOn, onToggleSpeaker, onScreenShare, scenario, 
             <Item icon={<MonitorUp className="size-4" />} onClick={pick(onScreenShare)}>
               Share screen
             </Item>
+            <Item icon={<MessageSquare className="size-4" />} onClick={pick(onChat)}>
+              Chat
+            </Item>
           </div>
           <Link role="menuitem" to="/settings" className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-200 hover:bg-white/10">
             <Settings className="size-4 text-stone-400" /> Call settings
           </Link>
 
-          <div className="my-2 border-t border-white/10" />
-          <p className="flex items-center gap-1.5 px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-amber-300">
-            <FlaskConical className="size-3.5" /> Presenter demo: simulate state
-          </p>
-          <Item icon={<WifiOff className="size-4" />} onClick={pick(() => onScenario('unstable'))} active={scenario === 'unstable'}>
-            Connection unstable
-          </Item>
-          <Item icon={<RefreshCw className="size-4" />} onClick={pick(() => onScenario('reconnecting'))} active={scenario === 'reconnecting'}>
-            Reconnecting
-          </Item>
-          <Item icon={<CircleSlash className="size-4" />} onClick={pick(() => onScenario('translation-unavailable'))} active={scenario === 'translation-unavailable'}>
-            Translation unavailable
-          </Item>
-          <Item icon={<RotateCcw className="size-4" />} onClick={pick(() => onScenario('normal'))} active={scenario === 'normal'}>
-            Back to normal
-          </Item>
         </div>
       )}
     </div>

@@ -28,6 +28,7 @@ import { Modal } from '../components/ui/Modal';
 import { CallLanguageSettings } from '../components/call/CallLanguageSettings';
 import { LanguageSelect } from '../components/translation/LanguageBits';
 import { useTheme } from '../context/ThemeContext';
+import { setPresenceVisible } from '../services/presence';
 import { useAuth } from '../context/AuthContext';
 import { useCallSettings } from '../context/CallSettingsContext';
 import { useToast } from '../context/ToastContext';
@@ -181,7 +182,10 @@ export default function SettingsPage() {
       <Card>
         <CardHeader title="Privacy" description="Control what others see and what BoloAI keeps." icon={<ShieldCheck className="size-5" />} />
         <div className="divide-y divide-line">
-          <Toggle icon={<Eye className="size-4" />} label="Show when I’m online" description="Contacts can see your online status" checked={prefs.showOnline} onChange={(v) => setPref('showOnline', v)} />
+          <Toggle icon={<Eye className="size-4" />} label="Show when I’m online" description="Contacts can see your online status" checked={prefs.showOnline} onChange={(v) => {
+              setPref('showOnline', v);
+              setPresenceVisible(v);
+            }} />
           <Toggle
             label="Save call transcripts"
             description="Keep translated transcripts in your call history"
@@ -298,7 +302,7 @@ export default function SettingsPage() {
               variant="danger"
               onClick={() => {
                 setDeleteOpen(false);
-                notify('Account deletion is disabled in the prototype.', 'warning');
+                notify('Account deletion isn’t available yet.', 'warning');
               }}
             >
               Delete account
@@ -306,7 +310,7 @@ export default function SettingsPage() {
           </>
         }
       >
-        <p className="text-sm text-muted">Account deletion needs the backend and is disabled in this prototype. Nothing will be removed.</p>
+        <p className="text-sm text-muted">Account deletion isn’t available yet. Nothing will be removed.</p>
       </Modal>
     </div>
   );

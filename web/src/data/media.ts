@@ -11,6 +11,3 @@ export const media = {
   parents: '/media/parents-call.jpg',
   headphones: '/media/headphones-laptop.jpg',
 };
-
-/** Contact whose "camera" plays the demo video on the call screen. */
-export const DEMO_CONTACT_ID = 'c_10';

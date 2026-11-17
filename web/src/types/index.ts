@@ -1,6 +1,6 @@
 // Shared domain types for the BoloAI web app.
 // Shapes are kept close to the backend (backend/src/models) so real API
-// responses can replace mock data without touching the UI.
+// responses map onto them directly.
 
 /** ISO 639-1 codes for languages BoloAI plans to support. */
 export type LanguageCode = 'en' | 'hi' | 'te' | 'gu' | 'ta' | 'kn' | 'ml' | 'bn' | 'mr';
@@ -93,6 +93,8 @@ export interface AppNotification {
   createdAt: string;
   read: boolean;
   actorName?: string;
+  /** The other person (e.g. who called), for "Call back". */
+  contactId?: string;
 }
 
 export interface CallSettings {

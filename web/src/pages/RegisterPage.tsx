@@ -62,17 +62,21 @@ export default function RegisterPage() {
       if (translationService.isLanguageSupported(language)) updateCallSettings({ myLanguage: language });
       notify('Account created. Welcome to BoloAI!', 'success');
       navigate('/dashboard', { replace: true });
-    } catch {
-      notify('Could not create your account. Please try again.', 'error');
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Could not create your account. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const onGoogle = async () => {
-    await loginWithGoogle();
-    notify('Signed in with Google (demo mode).', 'success');
-    navigate('/dashboard', { replace: true });
+    try {
+      await loginWithGoogle();
+      notify('Signed in with Google.', 'success');
+      navigate('/dashboard', { replace: true });
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Google sign-in failed.', 'error');
+    }
   };
 
   return (

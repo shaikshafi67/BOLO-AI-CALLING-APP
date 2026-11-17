@@ -1,23 +1,32 @@
 import type { AppNotification } from '../types';
-import { notifications } from '../data/notifications';
-import { delay } from './config';
+import { api } from './api';
 
-// TODO: Connect backend database
-// Plan: GET /api/notifications, PATCH /api/notifications/:id/read,
-// plus real-time pushes (incoming calls) over the signaling socket or
-// Firebase Cloud Messaging for mobile.
+interface NotificationRow {
+  id: string;
+  kind: 'missed_call' | 'system';
+  title: string;
+  message: string;
+  contactId: string | null;
+  read: boolean;
+  createdAt: string;
+}
 
+/** Notifications kept on the server (GET /api/notifications), e.g. missed calls. */
 export const notificationService = {
   async list(): Promise<AppNotification[]> {
-    await delay(250);
-    return notifications;
+    const rows = await api<NotificationRow[]>('GET', '/notifications');
+    return rows.map((r) => ({
+      id: r.id,
+      type: r.kind === 'missed_call' ? 'missed_call' : 'system',
+      title: r.title,
+      message: r.message,
+      createdAt: r.createdAt,
+      read: r.read,
+      contactId: r.contactId ?? undefined,
+    }));
   },
 
-  async markRead(_id: string): Promise<void> {
-    await delay(100);
-  },
-
-  async markAllRead(): Promise<void> {
-    await delay(150);
-  },
+  markRead: (id: string) => api('PATCH', `/notifications/${id}/read`, {}),
+  markAllRead: () => api('POST', '/notifications/read-all', {}),
+  remove: (id: string) => api('DELETE', `/notifications/${id}`),
 };

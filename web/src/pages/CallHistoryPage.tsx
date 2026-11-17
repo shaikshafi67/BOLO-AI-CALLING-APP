@@ -9,7 +9,7 @@ import { Avatar } from '../components/ui/Avatar';
 import { Tooltip } from '../components/ui/Tooltip';
 import { CallStatusBadge } from '../components/call/CallStatusBadge';
 import { LanguagePair } from '../components/translation/LanguageBits';
-import { calls } from '../data/calls';
+import { useHistory } from '../hooks/useHistory';
 import { languages } from '../data/languages';
 import type { Call, LanguageCode } from '../types';
 import { cn, formatCallDate, formatDuration, formatTime } from '../utils/format';
@@ -29,6 +29,7 @@ export default function CallHistoryPage() {
   const [range, setRange] = useState('all');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Call | null>(null);
+  const { calls } = useHistory();
 
   const filtered = useMemo(() => {
     const days = dateRanges.find((r) => r.value === range)?.days ?? Infinity;
@@ -40,7 +41,7 @@ export default function CallHistoryPage() {
         (language === 'all' || c.sourceLanguage === language || c.targetLanguage === language) &&
         new Date(c.startedAt).getTime() >= cutoff,
     );
-  }, [query, language, range]);
+  }, [calls, query, language, range]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);

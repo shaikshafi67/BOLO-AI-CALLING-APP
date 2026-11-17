@@ -1,0 +1,30 @@
+# Render blueprint for the BoloAI backend (REST API + Socket.IO calls + live translation).
+# Secrets are not stored here: values marked `sync: false` are entered in the Render
+# dashboard, and the Google Cloud key is added there as a Secret File named
+# gcp-service-account.json (Render mounts it under /etc/secrets/).
+services:
+  - type: web
+    name: boloai-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/gcp-service-account.json
+      - key: FIREBASE_PROJECT_ID
+        value: bolo-ai-8f1a0
+      - key: DATABASE_URL
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false

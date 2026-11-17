@@ -101,7 +101,8 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _store.load();
+    // After the first frame: loading notifies listeners, which mustn't happen mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _store.load());
   }
 
   @override
