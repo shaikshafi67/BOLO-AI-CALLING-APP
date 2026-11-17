@@ -40,6 +40,7 @@ function describe(e: unknown): AuthError {
       'auth/cancelled-popup-request': 'Google sign-in was closed before it finished.',
       'auth/popup-blocked': 'Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.',
       'auth/operation-not-allowed': 'This sign-in method isn’t switched on for BoloAI.',
+      'auth/unauthorized-domain': `Google sign-in isn’t allowed on ${window.location.hostname} yet. Add it under Firebase → Authentication → Settings → Authorized domains.`,
     }[code] ?? 'Something went wrong signing in. Please try again.';
   return new AuthError(message);
 }
