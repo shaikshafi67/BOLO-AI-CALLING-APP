@@ -12,7 +12,20 @@
           "package_name": "com.boloai.boloai_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "607547037853-t1keck2fgjtnir3215irvgvbs8j670qs.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.boloai.boloai_app",
+            "certificate_hash": "274f19ae54713fbff66e272b4911673e175576af"
+          }
+        },
+        {
+          "client_id": "607547037853-tmbvh12u08rkfpl3nb305u5nbmramsdb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDoJ2t_PnvoLz3p1Ls7MouZYSbReOVS6Rw"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "607547037853-tmbvh12u08rkfpl3nb305u5nbmramsdb.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "607547037853-i5sns4td2kesugagujsfa2okdb1n3kc8.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.boloai.boloaiApp"
+              }
+            }
+          ]
         }
       }
     }
