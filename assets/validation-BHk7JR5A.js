@@ -1,0 +1,1 @@
+var e=/^[^\s@]+@[^\s@]+\.[^\s@]+$/,t=[{id:`length`,label:`At least 8 characters`,test:e=>e.length>=8},{id:`upper`,label:`One uppercase letter`,test:e=>/[A-Z]/.test(e)},{id:`number`,label:`One number`,test:e=>/\d/.test(e)},{id:`symbol`,label:`One special character`,test:e=>/[^A-Za-z0-9]/.test(e)}];function n(e){return t.filter(t=>t.test(e)).length}export{t as n,n as r,e as t};
