@@ -10,6 +10,7 @@ import 'incoming_calls.dart';
 import 'presence_service.dart';
 import 'push_service.dart';
 import 'user_service.dart';
+import 'verification_service.dart';
 
 /// The signed-in user as the app sees it. Combines the Firebase account
 /// (id, email, display name) with the preferred language, which is saved on
@@ -21,6 +22,11 @@ class Session extends ChangeNotifier {
   AppUser? _user;
   AppUser? get user => _user;
   bool get isSignedIn => _user != null;
+
+  /// A new email/password account that must enter its emailed code before
+  /// using the app; null while checking (see VerificationService).
+  bool? _needsVerification;
+  bool? get needsVerification => _needsVerification;
 
   /// Why the user was signed out, shown once on the login screen.
   final ValueNotifier<String?> signOutNotice = ValueNotifier(null);
@@ -45,6 +51,7 @@ class Session extends ChangeNotifier {
     IncomingCalls.instance.attach();
     PresenceService.instance.attach();
     _sub = auth.authStateChanges().listen((u) {
+      _checkVerification(u);
       if (u == null) {
         DeviceSession.instance.stop();
         HistoryStore.instance.clear();
@@ -81,6 +88,32 @@ class Session extends ChangeNotifier {
     } catch (e) {
       debugPrint('[session] profile sync failed: $e');
     }
+  }
+
+  /// Google accounts are verified by Google; only new email/password accounts are asked.
+  Future<void> _checkVerification(User? u) async {
+    if (u == null || u.emailVerified) {
+      _needsVerification = u == null ? null : false;
+      return;
+    }
+    _needsVerification = null;
+    bool needs;
+    try {
+      needs = await VerificationService().needsVerification();
+    } catch (e) {
+      // Can't tell (e.g. offline): don't lock the user out.
+      debugPrint('[session] verification check failed: $e');
+      needs = false;
+    }
+    if (AuthService().currentUser?.uid != u.uid) return;
+    _needsVerification = needs;
+    notifyListeners();
+  }
+
+  /// The emailed code was accepted.
+  void markVerified() {
+    _needsVerification = false;
+    notifyListeners();
   }
 
   /// Call before creating the account, then [finishRegistration] once the

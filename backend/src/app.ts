@@ -10,6 +10,13 @@ import { notificationRouter } from './routes/notification.routes';
 import { createSessionRouter } from './routes/session.routes';
 import { requireAuth } from './middleware/auth.middleware';
 import { pgSessionStore } from './services/session.service';
+import { createVerificationRouter } from './routes/verification.routes';
+import { createEmailVerification } from './verification/emailVerification';
+import { firebaseAccounts, pgCodeStore } from './services/emailVerification.service';
+import { smtpMailer } from './services/mailer';
+
+/// New email/password accounts created on or after this date verify their email once.
+const verificationRequiredSince = new Date(process.env.EMAIL_VERIFICATION_SINCE ?? '2026-11-18T00:00:00Z');
 
 export interface AppOptions {
   /// Called when an account signs in on a new device, to sign its other devices out.
@@ -27,6 +34,20 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/users', userRouter);
   app.use('/api/calls', callRouter);
   app.use('/api/notifications', notificationRouter);
+  app.use(
+    '/api/verification',
+    createVerificationRouter(
+      requireAuth,
+      createEmailVerification({
+        store: pgCodeStore,
+        accounts: firebaseAccounts,
+        mailer: smtpMailer,
+        requiredSince: verificationRequiredSince,
+        // In development the code is printed in the server log instead of emailed.
+        enabled: () => smtpMailer.configured() || process.env.NODE_ENV !== 'production',
+      }),
+    ),
+  );
 
   // Serves the built Flutter web app (frontend/build/web) from the same
   // address as the API, so one public link (e.g. a tunnel) runs everything.

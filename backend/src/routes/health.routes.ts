@@ -11,6 +11,7 @@ function configStatus() {
     firebaseAdmin: set('FIREBASE_PROJECT_ID') && set('FIREBASE_CLIENT_EMAIL') && set('FIREBASE_PRIVATE_KEY'),
     // The key file must actually exist, not just be named in .env.
     googleCloud: set('GOOGLE_APPLICATION_CREDENTIALS') && fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS!),
+    email: set('SMTP_HOST') && set('SMTP_USER') && set('SMTP_PASS'),
   };
 }
 

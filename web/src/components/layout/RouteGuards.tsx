@@ -13,17 +13,29 @@ function Restoring() {
 
 /** Redirects signed-out users to /login, remembering where they were headed. */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { isAuthenticated, initializing } = useAuth();
+  const { isAuthenticated, initializing, needsVerification } = useAuth();
   const location = useLocation();
   if (initializing) return <Restoring />;
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  if (needsVerification === null) return <Restoring />;
+  // A new account must enter the emailed code before using the app.
+  if (needsVerification) return <Navigate to="/verify-email" replace />;
   return <>{children}</>;
 }
 
 /** Keeps signed-in users away from /login and /register. */
 export function GuestOnly({ children }: { children: ReactNode }) {
-  const { isAuthenticated, initializing } = useAuth();
+  const { isAuthenticated, initializing, needsVerification } = useAuth();
   if (initializing) return <Restoring />;
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  if (isAuthenticated) return <Navigate to={needsVerification ? '/verify-email' : '/dashboard'} replace />;
+  return <>{children}</>;
+}
+
+/** The verify-email page: signed in, and still needs to verify. */
+export function RequireUnverified({ children }: { children: ReactNode }) {
+  const { isAuthenticated, initializing, needsVerification } = useAuth();
+  if (initializing || (isAuthenticated && needsVerification === null)) return <Restoring />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!needsVerification) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }

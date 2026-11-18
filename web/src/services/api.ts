@@ -7,6 +7,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    /** The server's whole error reply (e.g. attemptsLeft). */
+    readonly body: Record<string, unknown> = {},
   ) {
     super(`${status} ${code}`);
   }
@@ -49,5 +51,5 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   }
   if (res.ok) return data as T;
   const code = data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string' ? (data as { error: string }).error : `http_${res.status}`;
-  throw new ApiError(res.status, code);
+  throw new ApiError(res.status, code, data && typeof data === 'object' ? (data as Record<string, unknown>) : {});
 }

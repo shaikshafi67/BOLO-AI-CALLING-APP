@@ -60,8 +60,8 @@ export default function RegisterPage() {
     try {
       await register({ fullName: fullName.trim(), email, password, preferredLanguage: language });
       if (translationService.isLanguageSupported(language)) updateCallSettings({ myLanguage: language });
-      notify('Account created. Welcome to BoloAI!', 'success');
-      navigate('/dashboard', { replace: true });
+      notify('Account created. Check your email for a 6-digit code.', 'success');
+      navigate('/verify-email', { replace: true });
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Could not create your account. Please try again.', 'error');
     } finally {

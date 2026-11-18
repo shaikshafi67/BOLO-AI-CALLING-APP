@@ -9,12 +9,13 @@ import { IncomingCallProvider } from './context/IncomingCallContext';
 import { IncomingCallModal } from './components/call/IncomingCallModal';
 import { ToastProvider } from './context/ToastContext';
 import { AppLayout } from './components/layout/AppLayout';
-import { GuestOnly, RequireAuth } from './components/layout/RouteGuards';
+import { GuestOnly, RequireAuth, RequireUnverified } from './components/layout/RouteGuards';
 import LandingPage from './pages/LandingPage';
 
 // Route-level code splitting keeps the landing page fast.
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const StartCallPage = lazy(() => import('./pages/StartCallPage'));
 const JoinCallPage = lazy(() => import('./pages/JoinCallPage'));
@@ -59,6 +60,7 @@ export default function App() {
                     <Route path="/" element={<LandingPage />} />
                     <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
                     <Route path="/register" element={<GuestOnly><RegisterPage /></GuestOnly>} />
+                    <Route path="/verify-email" element={<RequireUnverified><VerifyEmailPage /></RequireUnverified>} />
 
                     {/* Full-screen call experience (no sidebar) */}
                     <Route path="/call/:callId" element={<RequireAuth><VideoCallPage /></RequireAuth>} />

@@ -8,7 +8,10 @@ import 'device_session.dart';
 class ApiException implements Exception {
   final int status;
   final String code;
-  const ApiException(this.status, this.code);
+
+  /// The server's whole error reply (e.g. attemptsLeft).
+  final Map<String, dynamic> body;
+  const ApiException(this.status, this.code, [this.body = const {}]);
 
   bool get notFound => status == 404;
 
@@ -51,7 +54,7 @@ class ApiClient {
     final decoded = res.body.isEmpty ? null : _tryDecode(res.body);
     if (res.statusCode >= 200 && res.statusCode < 300) return decoded;
     final code = decoded is Map && decoded['error'] is String ? decoded['error'] as String : 'http_${res.statusCode}';
-    throw ApiException(res.statusCode, code);
+    throw ApiException(res.statusCode, code, decoded is Map ? Map<String, dynamic>.from(decoded) : const {});
   }
 
   static dynamic _tryDecode(String body) {

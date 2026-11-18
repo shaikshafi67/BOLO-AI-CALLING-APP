@@ -5,12 +5,16 @@ import { auth } from '../services/firebase';
 import { authService, type RegisterInput } from '../services/authService';
 import { deviceSession } from '../services/deviceSession';
 import { userService } from '../services/userService';
+import { verificationService } from '../services/verificationService';
 
 interface AuthContextValue {
   user: User | null;
   isAuthenticated: boolean;
   /** Firebase is still restoring a saved sign-in. */
   initializing: boolean;
+  /** A new account that must enter its emailed code first; null while checking. */
+  needsVerification: boolean | null;
+  markVerified: () => void;
   /** Why the user was signed out, shown once on the login screen. */
   signOutNotice: string | null;
   takeSignOutNotice: () => string | null;
@@ -45,6 +49,7 @@ function fromFirebase(fu: FirebaseUser, language: LanguageCode = 'hi'): User {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [needsVerification, setNeedsVerification] = useState<boolean | null>(null);
   const [signOutNotice, setSignOutNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,7 +62,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!fu) {
         deviceSession.stop();
         setUser(null);
+        setNeedsVerification(null);
         return;
+      }
+      // Google accounts are verified by Google; only new email/password accounts are asked.
+      if (fu.emailVerified) setNeedsVerification(false);
+      else {
+        setNeedsVerification(null);
+        verificationService
+          .status()
+          .then((s) => auth.currentUser?.uid === fu.uid && setNeedsVerification(s.required && !s.verified))
+          // Can't tell (e.g. offline): don't lock the user out.
+          .catch(() => auth.currentUser?.uid === fu.uid && setNeedsVerification(false));
       }
       setUser((prev) => (prev?.email === fu.email ? prev : fromFirebase(fu, authService.peekPendingProfile()?.preferredLanguage)));
       deviceSession.start(fu);
@@ -106,6 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(next);
   }, []);
 
+  const markVerified = useCallback(() => setNeedsVerification(false), []);
+
   const takeSignOutNotice = useCallback(() => {
     const n = signOutNotice;
     setSignOutNotice(null);
@@ -113,8 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [signOutNotice]);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: user !== null, initializing, signOutNotice, takeSignOutNotice, login, loginWithGoogle, register, logout, updateUser }),
-    [user, initializing, signOutNotice, takeSignOutNotice, login, loginWithGoogle, register, logout, updateUser],
+    () => ({ user, isAuthenticated: user !== null, initializing, needsVerification, markVerified, signOutNotice, takeSignOutNotice, login, loginWithGoogle, register, logout, updateUser }),
+    [user, initializing, needsVerification, markVerified, signOutNotice, takeSignOutNotice, login, loginWithGoogle, register, logout, updateUser],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
+import '../features/auth/verify_email_screen.dart';
 import '../features/call/active_call_screen.dart';
 import '../features/call/call_history_screen.dart';
 import '../features/call/incoming_call_screen.dart';
@@ -31,6 +32,10 @@ final appRouter = GoRouter(
     final signedIn = Session.instance.isSignedIn;
     final path = state.uri.path;
     if (!signedIn && !_publicRoutes.contains(path)) return '/login';
+    // A new account must enter the code we emailed before using the app.
+    final needsVerification = Session.instance.needsVerification == true;
+    if (signedIn && needsVerification && path != '/verify-email') return '/verify-email';
+    if (path == '/verify-email' && !needsVerification) return signedIn ? '/home' : '/login';
     if (signedIn && _guestOnlyRoutes.contains(path)) return '/home';
     return null;
   },
@@ -41,6 +46,7 @@ final appRouter = GoRouter(
     GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
     GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
     GoRoute(path: '/forgot-password', builder: (context, state) => const ForgotPasswordScreen()),
+    GoRoute(path: '/verify-email', builder: (context, state) => const VerifyEmailScreen()),
 
     // Main app with bottom navigation (phones) or side rail (tablet/desktop).
     ShellRoute(
