@@ -137,6 +137,34 @@ class DeviceSession {
     if (ready) for (const l of [...this.readyListeners]) l();
   }
 
+  /**
+   * Claims the account for this browser when nobody holds it (e.g. the claim
+   * after sign-in timed out while the server was waking up). Returns whether
+   * this browser now holds the account.
+   */
+  async claimIfInactive(): Promise<boolean> {
+    const user = this.user;
+    if (!user) return false;
+    try {
+      const res = await fetch(`${serviceConfig.apiBaseUrl}/sessions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sessionId, device: 'web' }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!res.ok) return false;
+      this.connect(this.generation);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The server says another device holds this account: sign out here. */
+  signedInElsewhere() {
+    this.revoked(this.generation);
+  }
+
   private async claimThenConnect(gen: number) {
     const user = this.user;
     if (!user || gen !== this.generation) return;
@@ -145,7 +173,8 @@ class DeviceSession {
         method: 'POST',
         headers: { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: this.sessionId, device: 'web' }),
-        signal: AbortSignal.timeout(10_000),
+        // The free server can take ~50 s to wake up.
+        signal: AbortSignal.timeout(60_000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       if (gen === this.generation) this.connect(gen);

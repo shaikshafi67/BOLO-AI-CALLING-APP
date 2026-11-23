@@ -37,7 +37,6 @@ export function CallLanguageSettings({ showToggles = true }: { showToggles?: boo
             description="Listener hears your words spoken in their language"
             checked={settings.voiceTranslation}
             onChange={(v) => update({ voiceTranslation: v })}
-            badge={<ComingSoonTag />}
           />
           <Toggle
             icon={<Captions className="size-4" />}
@@ -52,7 +51,7 @@ export function CallLanguageSettings({ showToggles = true }: { showToggles?: boo
             description="Detect the spoken language automatically"
             checked={settings.autoDetectLanguage}
             onChange={(v) => update({ autoDetectLanguage: v })}
-            badge={<ComingSoonTag />}
+            badge={<ComingSoonTag label="Coming soon" />}
           />
         </div>
       )}

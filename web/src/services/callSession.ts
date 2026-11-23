@@ -15,10 +15,10 @@ export class CallError extends Error {
         invalid_language: 'Choose a supported language (English, Hindi, Telugu or Tamil) and try again.',
         media_denied: 'BoloAI needs your microphone (and camera for video). Allow access in your browser, then try again.',
         unauthorized: 'Your sign-in expired. Sign in again to make calls.',
-        session_replaced: 'Your sign-in expired. Sign in again to make calls.',
-        session_inactive: 'Your sign-in expired. Sign in again to make calls.',
+        session_replaced: 'This account is signed in on another device (the app or another browser), so it was signed out here. Sign in again to use BoloAI on this device.',
+        session_inactive: 'This browser lost its sign-in session. Sign in again to make calls.',
         session_required: 'Your sign-in expired. Sign in again to make calls.',
-        unreachable: 'Can’t reach the BoloAI server. Check that it’s running and try again.',
+        unreachable: 'Can’t reach the BoloAI server. It may be waking up; try again in a minute.',
       }[code] ?? `Something went wrong setting up the call (${code}).`,
     );
   }
@@ -91,7 +91,8 @@ async function connectSocket(): Promise<Socket> {
     },
   });
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new CallError('unreachable')), 10_000);
+    // The free server can take ~50 s to wake up.
+    const timer = setTimeout(() => reject(new CallError('unreachable')), 60_000);
     socket.once('connect', () => {
       clearTimeout(timer);
       resolve();
@@ -148,7 +149,17 @@ export class CallSession {
     const { stream, cameraProblem } = await openMedia();
     let socket: Socket | null = null;
     try {
-      socket = await connectSocket();
+      try {
+        socket = await connectSocket();
+      } catch (e) {
+        // Nobody holds the account (the claim after sign-in didn't get through): claim it and retry.
+        if (e instanceof CallError && e.code === 'session_inactive' && (await deviceSession.claimIfInactive())) socket = await connectSocket();
+        else {
+          // Another device signed in to this account since: sign out here.
+          if (e instanceof CallError && e.code === 'session_replaced') deviceSession.signedInElsewhere();
+          throw e;
+        }
+      }
       const reply = await request(socket, event, payload);
       if (reply.ok !== true) throw new CallError(String(reply.error ?? 'unknown'));
       const session = new CallSession(socket, String(reply.roomCode), payload.language as LanguageCode, (reply.iceServers as RTCIceServer[]) ?? [], stream, auth.currentUser!.uid);

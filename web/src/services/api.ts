@@ -51,5 +51,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   }
   if (res.ok) return data as T;
   const code = data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string' ? (data as { error: string }).error : `http_${res.status}`;
+  // Another device signed in to this account (possibly through another server): sign out here.
+  if (res.status === 401 && code === 'session_replaced') deviceSession.signedInElsewhere();
   throw new ApiError(res.status, code, data && typeof data === 'object' ? (data as Record<string, unknown>) : {});
 }
