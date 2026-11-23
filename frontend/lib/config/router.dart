@@ -34,6 +34,12 @@ final appRouter = GoRouter(
     if (!signedIn && !_publicRoutes.contains(path)) return '/login';
     // A new account must enter the code we emailed before using the app.
     final needsVerification = Session.instance.needsVerification == true;
+    if (signedIn && needsVerification && Session.instance.verifyScreenOpen && _guestOnlyRoutes.contains(path)) {
+      // Back from "Verify your email" (e.g. the browser's Back button): sign
+      // out and stay here. They're asked again the next time they log in.
+      Session.instance.signOut();
+      return null;
+    }
     if (signedIn && needsVerification && path != '/verify-email') return '/verify-email';
     if (path == '/verify-email' && !needsVerification) return signedIn ? '/home' : '/login';
     if (signedIn && _guestOnlyRoutes.contains(path)) return '/home';

@@ -12,7 +12,8 @@
     "start": "node dist/server.js",
     "migrate": "ts-node --transpile-only scripts/migrate.ts",
     "test": "jest",
-    "check:translation": "ts-node --transpile-only scripts/check-translation.ts"
+    "check:translation": "ts-node --transpile-only scripts/check-translation.ts",
+    "add:domain": "ts-node --transpile-only scripts/add-authorized-domain.ts"
   },
   "keywords": [],
   "author": "",

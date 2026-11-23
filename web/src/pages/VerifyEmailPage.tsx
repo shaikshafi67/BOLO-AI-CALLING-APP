@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MailCheck, RotateCw } from 'lucide-react';
+import { ArrowLeft, MailCheck, RotateCw } from 'lucide-react';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/FormControls';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { verificationService } from '../services/verificationService';
+import { verifyPage } from '../components/layout/RouteGuards';
 
 /** Sends the first code once per page visit, even when React runs effects twice. */
 let sentForUid: string | null = null;
@@ -45,6 +46,13 @@ export default function VerifyEmailPage() {
     void send();
     // Once per account on arrival; "Send a new code" handles the rest.
   }, [user?.id]);
+
+  useEffect(() => {
+    verifyPage.open = true;
+    return () => {
+      verifyPage.open = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (wait <= 0) return;
@@ -96,6 +104,10 @@ export default function VerifyEmailPage() {
           }}
           error={error ?? undefined}
           className="text-center font-mono text-2xl tracking-[0.5em]"
+          // Keep the browser's password manager away from the code box.
+          data-lpignore="true"
+          data-1p-ignore
+          name="one-time-code"
         />
         <Button type="submit" fullWidth size="lg" loading={verifying} disabled={code.length !== 6}>
           Verify email
@@ -117,11 +129,11 @@ export default function VerifyEmailPage() {
           onClick={async () => {
             sentForUid = null;
             await logout();
-            navigate('/login', { replace: true });
+            navigate('/register', { replace: true });
           }}
-          className="font-medium text-muted hover:text-fg"
+          className="inline-flex items-center gap-1.5 font-medium text-muted hover:text-fg"
         >
-          Use a different account
+          <ArrowLeft className="size-3.5" aria-hidden /> Back
         </button>
       </div>
     </AuthLayout>

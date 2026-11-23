@@ -12,7 +12,10 @@ class AuthLayout extends StatelessWidget {
   final Widget child;
   final bool showBack;
 
-  const AuthLayout({super.key, required this.title, required this.subtitle, required this.child, this.showBack = false});
+  /// What Back does (defaults to going to the previous screen).
+  final VoidCallback? onBack;
+
+  const AuthLayout({super.key, required this.title, required this.subtitle, required this.child, this.showBack = false, this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +36,7 @@ class AuthLayout extends StatelessWidget {
       return Scaffold(
         body: Row(
           children: [
-            const Expanded(child: _PhotoPanel(large: true)),
+            Expanded(child: _PhotoPanel(large: true, showBack: showBack, onBack: onBack)),
             Expanded(
               child: SafeArea(
                 child: Column(
@@ -61,7 +64,7 @@ class AuthLayout extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(height: 210, child: _PhotoPanel(large: false, showBack: showBack)),
+            SizedBox(height: 210, child: _PhotoPanel(large: false, showBack: showBack, onBack: onBack)),
             Padding(padding: const EdgeInsets.fromLTRB(22, 26, 22, 32), child: form),
           ],
         ),
@@ -73,7 +76,8 @@ class AuthLayout extends StatelessWidget {
 class _PhotoPanel extends StatelessWidget {
   final bool large;
   final bool showBack;
-  const _PhotoPanel({required this.large, this.showBack = false});
+  final VoidCallback? onBack;
+  const _PhotoPanel({required this.large, this.showBack = false, this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -103,7 +107,7 @@ class _PhotoPanel extends StatelessWidget {
                       IconButton(
                         tooltip: 'Back',
                         icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                        onPressed: () => Navigator.of(context).maybePop(),
+                        onPressed: onBack ?? () => Navigator.of(context).maybePop(),
                       ),
                     const Logo(size: 30, textColor: Colors.white),
                     const Spacer(),

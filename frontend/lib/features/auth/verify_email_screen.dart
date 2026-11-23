@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -32,11 +33,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   @override
   void initState() {
     super.initState();
+    Session.instance.verifyScreenOpen = true;
     _send(first: true);
   }
 
   @override
   void dispose() {
+    Session.instance.verifyScreenOpen = false;
     _timer?.cancel();
     _code.dispose();
     super.dispose();
@@ -96,9 +99,27 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     }
   }
 
+  /// Back: sign out and return to sign-up (they verify the next time they log in).
+  Future<void> _back() async {
+    await Session.instance.signOut();
+    if (mounted) context.go('/register');
+  }
+
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: _build(context),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     return AuthLayout(
+      showBack: true,
+      onBack: _back,
       title: 'Verify your email',
       subtitle: 'We sent a 6-digit code to $_email. Enter it to finish creating your account.',
       child: Column(
@@ -125,13 +146,16 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
             controller: _code,
             autofocus: true,
             keyboardType: TextInputType.number,
-            autofillHints: const [AutofillHints.oneTimeCode],
+            // Phones can fill the code from the email; browsers would show a password popup instead.
+            autofillHints: kIsWeb ? null : const [AutofillHints.oneTimeCode],
+            enableSuggestions: false,
+            autocorrect: false,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 26, letterSpacing: 10, fontWeight: FontWeight.w600),
             onChanged: (_) => setState(() => _error = null),
             onSubmitted: (_) => _verify(),
-            decoration: const InputDecoration(labelText: 'Verification code', hintText: '123456'),
+            decoration: const InputDecoration(hintText: '6-digit code', counterText: ''),
           ),
           const SizedBox(height: 18),
           FilledButton(

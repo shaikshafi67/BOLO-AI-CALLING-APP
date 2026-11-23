@@ -28,6 +28,9 @@ class Session extends ChangeNotifier {
   bool? _needsVerification;
   bool? get needsVerification => _needsVerification;
 
+  /// The verify-email screen is showing: going back from it signs out.
+  bool verifyScreenOpen = false;
+
   /// Why the user was signed out, shown once on the login screen.
   final ValueNotifier<String?> signOutNotice = ValueNotifier(null);
 

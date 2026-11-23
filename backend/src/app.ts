@@ -43,8 +43,8 @@ export function createApp(options: AppOptions = {}) {
         accounts: firebaseAccounts,
         mailer: smtpMailer,
         requiredSince: verificationRequiredSince,
-        // In development the code is printed in the server log instead of emailed.
-        enabled: () => smtpMailer.configured() || process.env.NODE_ENV !== 'production',
+        // Off until a mailbox is set up (SMTP_* in .env / on Render).
+        enabled: () => smtpMailer.configured(),
       }),
     ),
   );

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -23,10 +23,20 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/** True while "Verify your email" is on screen (see GuestOnly). */
+export const verifyPage = { open: false };
+
 /** Keeps signed-in users away from /login and /register. */
 export function GuestOnly({ children }: { children: ReactNode }) {
-  const { isAuthenticated, initializing, needsVerification } = useAuth();
+  const { isAuthenticated, initializing, needsVerification, logout } = useAuth();
+  const leavingVerification = isAuthenticated && needsVerification === true && verifyPage.open;
+  useEffect(() => {
+    // Back from "Verify your email" (e.g. the browser's Back button): sign out
+    // and stay here. They're asked again the next time they log in.
+    if (leavingVerification) void logout();
+  }, [leavingVerification, logout]);
   if (initializing) return <Restoring />;
+  if (leavingVerification) return <>{children}</>;
   if (isAuthenticated) return <Navigate to={needsVerification ? '/verify-email' : '/dashboard'} replace />;
   return <>{children}</>;
 }
