@@ -21,3 +21,9 @@
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
 </IfModule>
+
+# Firebase sign-in helper pages (public/__/auth/handler and iframe) have no
+# file extension: serve them as web pages.
+<FilesMatch "^(handler|iframe)$">
+  ForceType text/html
+</FilesMatch>
