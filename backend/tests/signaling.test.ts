@@ -227,6 +227,21 @@ describe('live translation', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(voiceToSpeaker).toBe(false);
   });
+
+  test("the speaker's 'Translate my speech to' choice wins over the listener's language", async () => {
+    const [a, b] = await Promise.all([client('valid:u1:A'), client('valid:u2:B')]);
+    // Both speak Hindi, but A asked for Telugu.
+    const { roomCode } = await emit(a, 'room:create', { language: 'hi', translateTo: 'te' });
+    await emit(b, 'room:join', { roomCode, language: 'hi' });
+    const caption = next(b, 'caption');
+    a.emit('audio', Buffer.from('final:namaste'));
+    expect(await caption).toMatchObject({ sourceLanguage: 'hi', targetLanguage: 'te', translated: '[te] namaste' });
+
+    // Without a choice (or an unsupported one), the listener's language is used.
+    const toA = next(a, 'caption');
+    b.emit('audio', Buffer.from('final:kaise ho'));
+    expect(await toA).toMatchObject({ sourceLanguage: 'hi', targetLanguage: 'hi', translated: 'kaise ho' });
+  });
 });
 
 describe('ringing a contact', () => {

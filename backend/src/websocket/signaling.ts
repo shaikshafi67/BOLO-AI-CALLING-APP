@@ -281,8 +281,8 @@ export function attachSignaling(
 
     const publicView = (p: Participant) => ({ uid: p.uid, name: p.name, language: p.language });
 
-    const joinRoom = (roomCode: string, language: string, ack: Ack) => {
-      const result = rooms.join(roomCode, { socketId: socket.id, uid: user.uid, name: displayName, language });
+    const joinRoom = (roomCode: string, language: string, translateTo: string | undefined, ack: Ack) => {
+      const result = rooms.join(roomCode, { socketId: socket.id, uid: user.uid, name: displayName, language, translateTo });
       if (!result.ok) return ack({ ok: false, error: result.error });
       socket.join(roomCode);
       socket.to(roomCode).emit('peer:joined', { uid: user.uid, name: displayName, language });
@@ -297,22 +297,22 @@ export function attachSignaling(
     };
 
     // Create a new room and join it as the first participant.
-    socket.on('room:create', (payload: { language?: unknown } = {}, ack?: Ack) => {
+    socket.on('room:create', (payload: { language?: unknown; translateTo?: unknown } = {}, ack?: Ack) => {
       if (typeof ack !== 'function') return;
       const language = typeof payload?.language === 'string' ? payload.language : '';
       if (!isSupportedLanguageCode(language)) return ack({ ok: false, error: 'invalid_language' });
       if (rooms.roomOf(socket.id)) return ack({ ok: false, error: 'already_in_room' });
-      joinRoom(rooms.createRoom(), language, ack);
+      joinRoom(rooms.createRoom(), language, translateToFrom(payload), ack);
     });
 
     // Join an existing room by its code.
-    socket.on('room:join', (payload: { roomCode?: unknown; language?: unknown } = {}, ack?: Ack) => {
+    socket.on('room:join', (payload: { roomCode?: unknown; language?: unknown; translateTo?: unknown } = {}, ack?: Ack) => {
       if (typeof ack !== 'function') return;
       const roomCode = typeof payload?.roomCode === 'string' ? payload.roomCode.trim().toUpperCase() : '';
       const language = typeof payload?.language === 'string' ? payload.language : '';
       if (!ROOM_CODE_PATTERN.test(roomCode)) return ack({ ok: false, error: 'invalid_room_code' });
       if (!isSupportedLanguageCode(language)) return ack({ ok: false, error: 'invalid_language' });
-      joinRoom(roomCode, language, ack);
+      joinRoom(roomCode, language, translateToFrom(payload), ack);
     });
 
     // Relay WebRTC negotiation to the other participant.
@@ -434,7 +434,8 @@ export function attachSignaling(
       const listener = rooms.peersOf(socket.id)[0];
       if (!me || !listener) return; // nobody to translate for
       const roomCode = rooms.roomOf(socket.id)!;
-      pipeline.audio({ socketId: socket.id, uid: me.uid, name: me.name, language: me.language, roomCode }, listener.language, chunk);
+      // The speaker's "Translate my speech to" choice, else what the listener speaks.
+      pipeline.audio({ socketId: socket.id, uid: me.uid, name: me.name, language: me.language, roomCode }, me.translateTo ?? listener.language, chunk);
     });
     socket.on('translation:stop', () => pipeline?.stop(socket.id));
 
@@ -512,5 +513,9 @@ export function attachSignaling(
 /// Socket.IO room holding every socket of one account (never a call room,
 /// whose codes look like BOLO-1234).
 const userRoom = (uid: string) => `user:${uid}`;
+
+/// A supported `translateTo` from a create/join request, or undefined.
+const translateToFrom = (payload: { translateTo?: unknown } | undefined) =>
+  typeof payload?.translateTo === 'string' && isSupportedLanguageCode(payload.translateTo) ? payload.translateTo : undefined;
 /// Socket.IO room of the sockets watching [uid]'s online status.
 const presenceRoom = (uid: string) => `presence:${uid}`;

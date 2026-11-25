@@ -6,6 +6,9 @@ export interface Participant {
   uid: string;
   name: string;
   language: string;
+  /// The language this person wants their speech translated into ("Translate
+  /// my speech to"); when unset, the listener's own language is used.
+  translateTo?: string;
 }
 
 export type JoinError = 'not_found' | 'full' | 'already_in_room';

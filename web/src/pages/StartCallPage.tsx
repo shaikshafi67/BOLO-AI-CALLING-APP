@@ -31,7 +31,7 @@ export default function StartCallPage() {
   const start = async () => {
     setStarting(true);
     try {
-      const session = await CallSession.start(settings.myLanguage);
+      const session = await CallSession.start(settings.myLanguage, settings.targetLanguage);
       const contact = personById(contactId);
       if (contact) {
         // Ring them into the room; if that fails the room stays open for the code.

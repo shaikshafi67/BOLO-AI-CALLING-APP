@@ -152,10 +152,14 @@ class CallService {
   static CallSession? active;
 
   /// Creates a room on the signaling server and waits in it for the other person.
-  static Future<CallSession> start({required String language}) => _open('room:create', {'language': language});
+  /// The speech is translated into "Translate my speech to" (Settings), or the
+  /// listener's own language when that isn't set.
+  static Future<CallSession> start({required String language}) =>
+      _open('room:create', {'language': language, 'translateTo': AppState.instance.call.targetLanguage});
 
   /// Joins the room [roomCode] that someone else created.
-  static Future<CallSession> join(String roomCode, {required String language}) => _open('room:join', {'roomCode': roomCode, 'language': language});
+  static Future<CallSession> join(String roomCode, {required String language}) =>
+      _open('room:join', {'roomCode': roomCode, 'language': language, 'translateTo': AppState.instance.call.targetLanguage});
 
   static Future<CallSession> _open(String event, Map<String, dynamic> payload) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -687,6 +691,7 @@ class CallSession extends ChangeNotifier {
     final reply = await CallService._request(_socket, 'room:join', {
       'roomCode': roomCode,
       'language': language,
+      'translateTo': AppState.instance.call.targetLanguage,
     }).catchError((Object _) => <String, dynamic>{'ok': false, 'error': 'unreachable'});
     if (_closed) return;
     if (reply['ok'] != true) {

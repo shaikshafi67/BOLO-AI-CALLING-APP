@@ -21,7 +21,7 @@ export function IncomingCallModal() {
   const onAccept = async () => {
     setJoining(true);
     try {
-      const roomCode = await accept(settings.myLanguage);
+      const roomCode = await accept(settings.myLanguage, settings.targetLanguage);
       navigate(`/call/${roomCode}`);
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Couldn’t join the call.', 'error');

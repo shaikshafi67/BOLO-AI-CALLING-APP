@@ -45,10 +45,10 @@ interface CallSummary {
 
 /** Joins [roomCode] once, even when React runs the effect twice (StrictMode). */
 let pendingJoin: { roomCode: string; promise: Promise<CallSession> } | null = null;
-function joinOnce(roomCode: string, language: LanguageCode): Promise<CallSession> {
+function joinOnce(roomCode: string, language: LanguageCode, translateTo: LanguageCode): Promise<CallSession> {
   if (CallSession.active?.roomCode === roomCode) return Promise.resolve(CallSession.active);
   if (pendingJoin?.roomCode !== roomCode) {
-    const promise = CallSession.join(roomCode, language).finally(() => {
+    const promise = CallSession.join(roomCode, language, translateTo).finally(() => {
       if (pendingJoin?.promise === promise) pendingJoin = null;
     });
     pendingJoin = { roomCode, promise };
@@ -93,13 +93,13 @@ function CallRoom({ roomCode, onEnd }: { roomCode: string; onEnd: (s: CallSummar
   useEffect(() => {
     if (session) return;
     let cancelled = false;
-    joinOnce(roomCode, settings.myLanguage)
+    joinOnce(roomCode, settings.myLanguage, settings.targetLanguage)
       .then((s) => !cancelled && setSession(s))
       .catch((e: Error) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;
     };
-  }, [session, roomCode, settings.myLanguage]);
+  }, [session, roomCode, settings.myLanguage, settings.targetLanguage]);
 
   // Leaving the page hangs up (after a moment, so StrictMode's remount doesn't).
   useEffect(() => {
@@ -224,7 +224,7 @@ function LiveCall({ session, onEnd }: { session: CallSession; onEnd: (s: CallSum
         current={current}
         status={status}
         sourceLanguage={session.language}
-        targetLanguage={session.peer?.language ?? settings.targetLanguage}
+        targetLanguage={session.translateTo ?? session.peer?.language ?? settings.targetLanguage}
         onClose={onClose}
       />
     );
@@ -232,7 +232,7 @@ function LiveCall({ session, onEnd }: { session: CallSession; onEnd: (s: CallSum
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-stone-950 text-white">
       <RemoteAudio key={audioKey} stream={session.remoteStream} muted={!session.speakerOn} volume={session.remoteVolume} onBlocked={onAudioBlocked} />
-      <CallTopBar roomCode={session.roomCode} connection={session.state} from={session.language} to={session.peer?.language ?? settings.targetLanguage} seconds={seconds} />
+      <CallTopBar roomCode={session.roomCode} connection={session.state} from={session.language} to={session.translateTo ?? session.peer?.language ?? settings.targetLanguage} seconds={seconds} />
 
       <div className="flex min-h-0 flex-1">
         {/* Video stage */}

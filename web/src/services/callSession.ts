@@ -134,14 +134,17 @@ export class CallSession {
   /** The call in progress (one at a time), handed from Start/Join to the call screen. */
   static active: CallSession | null = null;
 
-  /** Creates a room and waits in it for the other person. */
-  static start(language: LanguageCode) {
-    return CallSession.open('room:create', { language });
+  /**
+   * Creates a room and waits in it for the other person. [translateTo] is
+   * "Translate my speech to"; without it the listener's own language is used.
+   */
+  static start(language: LanguageCode, translateTo?: LanguageCode) {
+    return CallSession.open('room:create', { language, translateTo });
   }
 
   /** Joins someone else's room. */
-  static join(roomCode: string, language: LanguageCode) {
-    return CallSession.open('room:join', { roomCode, language });
+  static join(roomCode: string, language: LanguageCode, translateTo?: LanguageCode) {
+    return CallSession.open('room:join', { roomCode, language, translateTo });
   }
 
   private static async open(event: string, payload: Record<string, unknown>): Promise<CallSession> {
@@ -165,6 +168,7 @@ export class CallSession {
       const reply = await request(socket, event, payload);
       if (reply.ok !== true) throw new CallError(String(reply.error ?? 'unknown'));
       const session = new CallSession(socket, String(reply.roomCode), payload.language as LanguageCode, (reply.iceServers as RTCIceServer[]) ?? [], stream, auth.currentUser!.uid);
+      session.translateTo = payload.translateTo as LanguageCode | undefined;
       session.cameraProblem = cameraProblem;
       const peers = (reply.peers as Record<string, unknown>[] | undefined) ?? [];
       session.init(peers.length ? peerFrom(peers[0]) : null);
@@ -180,6 +184,8 @@ export class CallSession {
   // ---- State the call screen reads (see useCallSession) ----
 
   state: ConnectionState = 'connecting';
+  /** "Translate my speech to", when chosen. */
+  translateTo: LanguageCode | undefined;
   /** Nobody else is in the room yet. */
   waiting = true;
   peer: CallPeer | null = null;
@@ -391,7 +397,7 @@ export class CallSession {
   /** The call link dropped: the server removed us from the room, so rejoin. */
   private async rejoin() {
     if (this.closed) return;
-    const reply = await request(this.socket, 'room:join', { roomCode: this.roomCode, language: this.language });
+    const reply = await request(this.socket, 'room:join', { roomCode: this.roomCode, language: this.language, translateTo: this.translateTo });
     if (this.closed) return;
     if (reply.ok !== true) {
       this.notice('The connection was lost and the call has ended.');

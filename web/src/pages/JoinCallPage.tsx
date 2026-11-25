@@ -32,7 +32,7 @@ export default function JoinCallPage() {
     setError(undefined);
     setJoining(true);
     try {
-      await CallSession.join(normalized, settings.myLanguage);
+      await CallSession.join(normalized, settings.myLanguage, settings.targetLanguage);
       navigate(`/call/${normalized}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Couldn’t join the call.');

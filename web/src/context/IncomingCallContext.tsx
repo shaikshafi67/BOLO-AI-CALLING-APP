@@ -14,7 +14,7 @@ export interface IncomingCall {
 interface IncomingCallContextValue {
   incoming: IncomingCall | null;
   /** Joins the caller's room. Throws CallError if that fails. */
-  accept: (language: LanguageCode) => Promise<string>;
+  accept: (language: LanguageCode, translateTo?: LanguageCode) => Promise<string>;
   decline: () => void;
 }
 
@@ -50,11 +50,11 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const accept = useCallback(
-    async (language: LanguageCode) => {
+    async (language: LanguageCode, translateTo?: LanguageCode) => {
       const call = incoming;
       if (!call) throw new Error('No incoming call');
       try {
-        await CallSession.join(call.roomCode, language);
+        await CallSession.join(call.roomCode, language, translateTo);
       } finally {
         setIncoming(null);
       }
