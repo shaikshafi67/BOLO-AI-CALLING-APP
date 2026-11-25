@@ -1,0 +1,1 @@
+var e=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;function t(e){if(e.length<8)return 0;let t=[/[a-z]/,/[A-Z]/,/\d/,/[^A-Za-z0-9]/].filter(t=>t.test(e)).length;return e.length>=12||t>=3?3:t>=2?2:1}function n(){for(let e of navigator.languages??[navigator.language]){let t=e.toLowerCase().split(`-`)[0];if(t===`hi`||t===`te`||t===`ta`||t===`en`)return t}return`en`}export{n,t as r,e as t};
