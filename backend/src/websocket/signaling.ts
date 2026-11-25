@@ -223,11 +223,16 @@ export function attachSignaling(
   //   io(url, { auth: { token: await user.getIdToken(), sessionId } })
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
-    if (typeof token !== 'string' || token.length === 0) return next(new Error('unauthorized'));
+    if (typeof token !== 'string' || token.length === 0) {
+      console.warn('[signaling] connection without a sign-in token');
+      return next(new Error('unauthorized'));
+    }
     let user: VerifiedUser;
     try {
       user = await verifyToken(token);
-    } catch {
+    } catch (err) {
+      // e.g. an expired token, or Firebase Admin misconfigured on the server.
+      console.warn('[signaling] rejected a sign-in token:', (err as { code?: string; message?: string }).code ?? (err as Error).message);
       return next(new Error('unauthorized'));
     }
     socket.data.user = user;

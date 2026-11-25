@@ -14,7 +14,7 @@ export class CallError extends Error {
         invalid_room_code: 'Room codes look like BOLO-4829.',
         invalid_language: 'Choose a supported language (English, Hindi, Telugu or Tamil) and try again.',
         media_denied: 'BoloAI needs your microphone (and camera for video). Allow access in your browser, then try again.',
-        unauthorized: 'Your sign-in expired. Sign in again to make calls.',
+        unauthorized: 'BoloAI couldn’t confirm your sign-in with the server. Log out, log in again, then retry.',
         session_replaced: 'This account is signed in on another device (the app or another browser), so it was signed out here. Sign in again to use BoloAI on this device.',
         session_inactive: 'This browser lost its sign-in session. Sign in again to make calls.',
         session_required: 'Your sign-in expired. Sign in again to make calls.',
@@ -154,6 +154,8 @@ export class CallSession {
       } catch (e) {
         // Nobody holds the account (the claim after sign-in didn't get through): claim it and retry.
         if (e instanceof CallError && e.code === 'session_inactive' && (await deviceSession.claimIfInactive())) socket = await connectSocket();
+        // A stale sign-in token: get a fresh one and retry once.
+        else if (e instanceof CallError && e.code === 'unauthorized' && (await auth.currentUser?.getIdToken(true).then(() => true, () => false))) socket = await connectSocket();
         else {
           // Another device signed in to this account since: sign out here.
           if (e instanceof CallError && e.code === 'session_replaced') deviceSession.signedInElsewhere();
