@@ -122,7 +122,7 @@ export function TranslationPanel({ entries, status, sourceLanguage, targetLangua
 
       <footer className="flex items-start gap-2 border-t border-white/10 px-4 py-3 text-[11px] text-stone-400">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        Live speech recognition and translation will appear here once this web app is connected to the BoloAI backend.
+        Speak in short sentences. Each one is translated as soon as you stop for a moment.
       </footer>
     </section>
   );

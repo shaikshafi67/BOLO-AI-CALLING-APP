@@ -1,5 +1,5 @@
 import { RecognitionResult, TranslationEngine } from '../src/translation/engine';
-import { LivePipeline, PipelineOutput } from '../src/translation/livePipeline';
+import { LivePipeline, PipelineOutput, STABLE_MS } from '../src/translation/livePipeline';
 
 /// Audio chunks are plain text here: "final:..." ends a sentence, anything
 /// else is interim text. "fail" makes recognition error out.
@@ -38,7 +38,48 @@ function recorder() {
 const shafi = { socketId: 's1', uid: 'u1', name: 'Shafi', language: 'hi', roomCode: 'BOLO-1234' };
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+// Every pipeline is stopped after its test, so no "words stopped changing" timer outlives it.
+const pipelines: LivePipeline[] = [];
+const track = (p: LivePipeline) => (pipelines.push(p), p);
+afterEach(() => pipelines.splice(0).forEach((p) => ['s1', 's2'].forEach((id) => p.stop(id))));
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 describe('LivePipeline', () => {
+  test('a sentence is translated once its words stop changing, without waiting for the pause', async () => {
+    const engine = fakeEngine();
+    const { events, out } = recorder();
+    const pipeline = track(new LivePipeline(engine, out));
+
+    pipeline.audio(shafi, 'te', Buffer.from('namaste'));
+    pipeline.audio(shafi, 'te', Buffer.from('namaste dost'));
+    expect(events.filter((e) => e.payload.final)).toHaveLength(0);
+
+    await wait(STABLE_MS + 100);
+    const finals = events.filter((e) => e.event === 'caption' && e.payload.final);
+    expect(finals).toHaveLength(1);
+    expect(finals[0].payload).toMatchObject({ id: 'u1-0', original: 'namaste dost', translated: '[te] namaste dost' });
+
+    // The recognizer's own final for the same words (now punctuated) adds nothing.
+    pipeline.audio(shafi, 'te', Buffer.from('final:Namaste dost.'));
+    await flush();
+    expect(events.filter((e) => e.event === 'caption' && e.payload.final)).toHaveLength(1);
+  });
+
+  test('words spoken after an early translation become the next sentence', async () => {
+    const { events, out } = recorder();
+    const pipeline = track(new LivePipeline(fakeEngine(), out));
+
+    pipeline.audio(shafi, 'te', Buffer.from('aap kaise'));
+    await wait(STABLE_MS + 100);
+    // The recognizer keeps the earlier words in its result; only the new ones are shown.
+    pipeline.audio(shafi, 'te', Buffer.from('aap kaise ho bhai'));
+    expect(events[events.length - 1].payload).toMatchObject({ id: 'u1-1', original: 'ho bhai', final: false });
+    pipeline.audio(shafi, 'te', Buffer.from('final:aap kaise ho bhai?'));
+    await flush();
+    const finals = events.filter((e) => e.event === 'caption' && e.payload.final).map((e) => e.payload.original);
+    expect(finals).toEqual(['aap kaise', 'ho bhai?']);
+  });
+
   test('measures how long each sentence takes to caption and to voice', async () => {
     let clock = 1000;
     const lines: any[] = [];
@@ -53,7 +94,7 @@ describe('LivePipeline', () => {
         return Buffer.from(text);
       },
     });
-    const pipeline = new LivePipeline(engine, { ...out, translated: (line) => lines.push(line) }, () => clock);
+    const pipeline = track(new LivePipeline(engine, { ...out, translated: (line) => lines.push(line) }, () => clock));
 
     pipeline.audio(shafi, 'te', Buffer.from('final:namaste'));
     await flush();
@@ -70,7 +111,7 @@ describe('LivePipeline', () => {
   test('interim words caption the room; a finished sentence is translated and voiced for the listener', async () => {
     const engine = fakeEngine();
     const { events, out } = recorder();
-    const pipeline = new LivePipeline(engine, out);
+    const pipeline = track(new LivePipeline(engine, out));
 
     pipeline.audio(shafi, 'te', Buffer.from('namaste'));
     pipeline.audio(shafi, 'te', Buffer.from('final:namaste dost'));
@@ -94,7 +135,7 @@ describe('LivePipeline', () => {
   test('same language: captions only, no translation or voice', async () => {
     const translate = jest.fn();
     const { events, out } = recorder();
-    const pipeline = new LivePipeline(fakeEngine({ translate }), out);
+    const pipeline = track(new LivePipeline(fakeEngine({ translate }), out));
     pipeline.audio(shafi, 'hi', Buffer.from('final:kaise ho'));
     await flush();
     expect(translate).not.toHaveBeenCalled();
@@ -106,7 +147,7 @@ describe('LivePipeline', () => {
     const engine = fakeEngine();
     const { events, out } = recorder();
     let now = 1_000;
-    const pipeline = new LivePipeline(engine, out, () => now);
+    const pipeline = track(new LivePipeline(engine, out, () => now));
 
     pipeline.audio(shafi, 'te', Buffer.from('fail'));
     expect(events).toEqual([{ to: 'socket:s1', event: 'translation:status', payload: { available: false, reason: 'recognition_failed' } }]);
@@ -121,7 +162,7 @@ describe('LivePipeline', () => {
 
   test('a translation failure still shows the original words', async () => {
     const { events, out } = recorder();
-    const pipeline = new LivePipeline(fakeEngine({ translate: async () => Promise.reject(new Error('quota')) }), out);
+    const pipeline = track(new LivePipeline(fakeEngine({ translate: async () => Promise.reject(new Error('quota')) }), out));
     pipeline.audio(shafi, 'te', Buffer.from('final:namaste'));
     await flush();
     expect(events[0]).toMatchObject({ event: 'caption', payload: { original: 'namaste', translated: null, final: true } });
@@ -130,7 +171,7 @@ describe('LivePipeline', () => {
 
   test('restarts recognition when the speaker changes language', () => {
     const engine = fakeEngine();
-    const pipeline = new LivePipeline(engine, recorder().out);
+    const pipeline = track(new LivePipeline(engine, recorder().out));
     pipeline.audio(shafi, 'te', Buffer.from('a'));
     pipeline.audio({ ...shafi, language: 'ta' }, 'te', Buffer.from('b'));
     expect(engine.opened).toEqual(['hi', 'ta']);

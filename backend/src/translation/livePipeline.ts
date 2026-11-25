@@ -38,6 +38,10 @@ interface SpeakerState {
   startedAt: number;
   sentence: number;
   pausedUntil: number;
+  /// Words of the current recognition result already translated early (see STABLE_MS).
+  consumed: string[];
+  /// Fires when the interim words stop changing.
+  stableTimer?: ReturnType<typeof setTimeout>;
 }
 
 /// Google closes streaming recognition after ~5 minutes; start a fresh
@@ -45,6 +49,23 @@ interface SpeakerState {
 const STREAM_MAX_MS = 240_000;
 /// After a service error (billing, permissions...) wait before trying again.
 const ERROR_PAUSE_MS = 30_000;
+/// Translate a sentence once its words have stopped changing for this long,
+/// instead of waiting for the recognizer to notice a pause (slow in a noisy
+/// room, e.g. with a fan running).
+export const STABLE_MS = 1000;
+
+/// Words compared loosely: punctuation and case are ignored, since the
+/// recognizer adds punctuation only to its final result.
+const words = (text: string) => text.split(/\s+/).filter(Boolean);
+const loose = (word: string) => word.toLocaleLowerCase().replace(/[\p{P}\p{S}]/gu, '');
+
+/// [text] without the leading [consumed] words, when it starts with them.
+function remainder(text: string, consumed: string[]): string {
+  const w = words(text);
+  if (consumed.length === 0 || w.length < consumed.length) return consumed.length === 0 ? text : '';
+  for (let i = 0; i < consumed.length; i++) if (loose(w[i]) !== loose(consumed[i])) return text;
+  return w.slice(consumed.length).join(' ');
+}
 
 /// Live translation for calls: speech → captions → translation → voice.
 ///
@@ -66,7 +87,7 @@ export class LivePipeline {
   audio(speaker: Speaker, listenerLanguage: string, chunk: Buffer) {
     let state = this.speakers.get(speaker.socketId);
     if (!state) {
-      state = { speaker, listenerLanguage, stream: null, startedAt: 0, sentence: 0, pausedUntil: 0 };
+      state = { speaker, listenerLanguage, stream: null, startedAt: 0, sentence: 0, pausedUntil: 0, consumed: [] };
       this.speakers.set(speaker.socketId, state);
     }
     // Languages can change mid-call (language:update); a new stream picks them up.
@@ -85,7 +106,9 @@ export class LivePipeline {
 
   /// The speaker muted, paused translation or left.
   stop(socketId: string) {
-    this.speakers.get(socketId)?.stream?.end();
+    const state = this.speakers.get(socketId);
+    clearTimeout(state?.stableTimer);
+    state?.stream?.end();
     this.speakers.delete(socketId);
   }
 
@@ -96,13 +119,7 @@ export class LivePipeline {
         state.speaker.language,
         (result) => {
           if (state.stream !== stream) return;
-          if (result.final) {
-            // Number the sentence now: the next one's interim text can
-            // arrive while this one is still being translated.
-            void this.finish(state, result.text, state.sentence++);
-          } else {
-            this.caption(state, state.sentence, result.text, null, false);
-          }
+          this.onResult(state, result.text, result.final);
         },
         (error) => this.failed(state, stream, error),
       );
@@ -112,6 +129,28 @@ export class LivePipeline {
     }
     state.startedAt = this.now();
     return stream;
+  }
+
+  /// Interim words are captioned as they come; a sentence is translated when
+  /// the recognizer finalizes it or its words stop changing for STABLE_MS.
+  private onResult(state: SpeakerState, text: string, final: boolean) {
+    clearTimeout(state.stableTimer);
+    // Words of this result that were already translated early are dropped.
+    const rest = remainder(text, state.consumed).trim();
+    if (final) {
+      state.consumed = [];
+      // Number the sentence now: the next one's interim text can arrive
+      // while this one is still being translated.
+      if (rest) void this.finish(state, rest, state.sentence++);
+      return;
+    }
+    if (!rest) return;
+    this.caption(state, state.sentence, rest, null, false);
+    state.stableTimer = setTimeout(() => {
+      if (!this.speakers.has(state.speaker.socketId)) return;
+      state.consumed = words(text);
+      void this.finish(state, rest, state.sentence++);
+    }, STABLE_MS);
   }
 
   private caption(state: SpeakerState, sentence: number, original: string, translated: string | null, final: boolean, latencyMs?: number) {
