@@ -22,7 +22,6 @@ function configStatus() {
 function firebaseAdminProblem(): string | null {
   const key = process.env.FIREBASE_PRIVATE_KEY?.trim() ?? '';
   if (!key) return 'FIREBASE_PRIVATE_KEY is not set';
-  if (/^["']/.test(key)) return 'FIREBASE_PRIVATE_KEY starts with a quote: paste it without the surrounding quotes';
   if (!key.includes('BEGIN PRIVATE KEY') || !key.includes('END PRIVATE KEY')) return 'FIREBASE_PRIVATE_KEY is incomplete: it must include the BEGIN and END lines';
   try {
     getFirebaseApp();

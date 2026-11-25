@@ -30,6 +30,10 @@ export const env = {
   },
   get firebasePrivateKey() {
     // .env stores the key with literal \n sequences; convert to real newlines.
-    return required('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n');
+    // Quotes copied along with it (e.g. into a hosting dashboard) are removed.
+    return required('FIREBASE_PRIVATE_KEY')
+      .trim()
+      .replace(/^(["'])([\s\S]*)\1$/, '$2')
+      .replace(/\\n/g, '\n');
   },
 };
