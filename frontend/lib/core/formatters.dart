@@ -59,15 +59,11 @@ String normalizeRoomCode(String input) {
 
 final emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
 
-class PasswordRule {
-  final String label;
-  final bool Function(String) test;
-  const PasswordRule(this.label, this.test);
-}
+const minPasswordLength = 8;
 
-final passwordRules = [
-  PasswordRule('At least 8 characters', (v) => v.length >= 8),
-  PasswordRule('One uppercase letter', (v) => RegExp('[A-Z]').hasMatch(v)),
-  PasswordRule('One number', (v) => RegExp(r'\d').hasMatch(v)),
-  PasswordRule('One special character', (v) => RegExp('[^A-Za-z0-9]').hasMatch(v)),
-];
+/// How strong a password looks (0–3), for a hint only; just the length is required.
+int passwordStrength(String v) {
+  if (v.length < minPasswordLength) return 0;
+  final variety = [RegExp('[a-z]'), RegExp('[A-Z]'), RegExp(r'\d'), RegExp('[^A-Za-z0-9]')].where((r) => r.hasMatch(v)).length;
+  return v.length >= 12 || variety >= 3 ? 3 : (variety >= 2 ? 2 : 1);
+}

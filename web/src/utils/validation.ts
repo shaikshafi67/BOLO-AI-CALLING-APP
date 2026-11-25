@@ -1,19 +1,19 @@
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export interface PasswordRule {
-  id: string;
-  label: string;
-  test: (value: string) => boolean;
+export const MIN_PASSWORD_LENGTH = 8;
+
+/** How strong a password looks (0–3), for a hint only; just the length is required. */
+export function passwordStrength(value: string): number {
+  if (value.length < MIN_PASSWORD_LENGTH) return 0;
+  const variety = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(value)).length;
+  return value.length >= 12 || variety >= 3 ? 3 : variety >= 2 ? 2 : 1;
 }
 
-export const passwordRules: PasswordRule[] = [
-  { id: 'length', label: 'At least 8 characters', test: (v) => v.length >= 8 },
-  { id: 'upper', label: 'One uppercase letter', test: (v) => /[A-Z]/.test(v) },
-  { id: 'number', label: 'One number', test: (v) => /\d/.test(v) },
-  { id: 'symbol', label: 'One special character', test: (v) => /[^A-Za-z0-9]/.test(v) },
-];
-
-/** 0–4, one point per satisfied rule. */
-export function passwordScore(value: string): number {
-  return passwordRules.filter((r) => r.test(value)).length;
+/** The phone's or browser's language, if BoloAI supports it (else English). */
+export function deviceLanguage(): 'en' | 'hi' | 'te' | 'ta' {
+  for (const tag of navigator.languages ?? [navigator.language]) {
+    const code = tag.toLowerCase().split('-')[0];
+    if (code === 'hi' || code === 'te' || code === 'ta' || code === 'en') return code;
+  }
+  return 'en';
 }

@@ -10,7 +10,7 @@ interface FieldWrapperProps {
   id: string;
   label?: string;
   hint?: ReactNode;
-  error?: string;
+  error?: ReactNode;
   children: ReactNode;
   labelAction?: ReactNode;
 }
@@ -43,7 +43,7 @@ function FieldWrapper({ id, label, hint, error, children, labelAction }: FieldWr
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   hint?: ReactNode;
-  error?: string;
+  error?: ReactNode;
   icon?: ReactNode;
   labelAction?: ReactNode;
 }
@@ -95,7 +95,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   hint?: ReactNode;
-  error?: string;
+  error?: ReactNode;
   icon?: ReactNode;
 }
 

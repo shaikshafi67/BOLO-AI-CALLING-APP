@@ -22,7 +22,15 @@ export interface RegisterInput {
 }
 
 /** A sign-in problem with a message the user can act on. */
-export class AuthError extends Error {}
+export class AuthError extends Error {
+  constructor(
+    message: string,
+    /** Firebase's error code, e.g. auth/email-already-in-use. */
+    readonly code = '',
+  ) {
+    super(message);
+  }
+}
 
 function describe(e: unknown): AuthError {
   const code = (e as { code?: string }).code ?? '';
@@ -42,7 +50,7 @@ function describe(e: unknown): AuthError {
       'auth/operation-not-allowed': 'This sign-in method isn’t switched on for BoloAI.',
       'auth/unauthorized-domain': `Google sign-in isn’t allowed on ${window.location.hostname} yet. Add it under Firebase → Authentication → Settings → Authorized domains.`,
     }[code] ?? 'Something went wrong signing in. Please try again.';
-  return new AuthError(message);
+  return new AuthError(message, code);
 }
 
 /** Profile details typed on the register screen, used when the backend profile is created. */

@@ -105,7 +105,7 @@ class AuthService {
       return credential.user;
     } on FirebaseAuthException catch (e) {
       DeviceSession.instance.cancelFreshSignIn();
-      throw AuthFailure(_messageFor(e));
+      throw AuthFailure(_messageFor(e), e.code);
     }
   }
 
@@ -166,7 +166,10 @@ class AuthService {
 
 class AuthFailure implements Exception {
   final String message;
-  AuthFailure(this.message);
+
+  /// Firebase's error code, e.g. email-already-in-use.
+  final String code;
+  AuthFailure(this.message, [this.code = '']);
   @override
   String toString() => message;
 }
