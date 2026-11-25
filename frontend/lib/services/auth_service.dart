@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'device_session.dart';
 
 /// Thin wrapper around FirebaseAuth so the rest of the app depends on this
@@ -31,17 +32,30 @@ class AuthService {
     }
   }
 
-  /// Google sign-in: a popup on web, the browser-based Google flow on Android/iOS.
+  /// Google sign-in: a popup on web; on Android the native Google account
+  /// picker (a browser tab fails there: phone browsers block its hand-off
+  /// back to the app with "missing initial state").
   /// Returns null when the user closes the Google window without choosing.
   /// Needs the Google provider enabled in Firebase Console → Authentication.
   Future<User?> signInWithGoogle({bool remember = true}) async {
-    final provider = GoogleAuthProvider()..setCustomParameters({'prompt': 'select_account'});
     try {
       if (kIsWeb) {
         await _auth.setPersistence(remember ? Persistence.LOCAL : Persistence.SESSION);
       }
       DeviceSession.instance.expectFreshSignIn();
-      final credential = kIsWeb ? await _auth.signInWithPopup(provider) : await _auth.signInWithProvider(provider);
+      final UserCredential credential;
+      if (kIsWeb) {
+        credential = await _auth.signInWithPopup(GoogleAuthProvider()..setCustomParameters({'prompt': 'select_account'}));
+      } else if (defaultTargetPlatform == TargetPlatform.android) {
+        final idToken = await _nativeGoogleIdToken();
+        if (idToken == null) {
+          DeviceSession.instance.cancelFreshSignIn();
+          return null;
+        }
+        credential = await _auth.signInWithCredential(GoogleAuthProvider.credential(idToken: idToken));
+      } else {
+        credential = await _auth.signInWithProvider(GoogleAuthProvider()..setCustomParameters({'prompt': 'select_account'}));
+      }
       return credential.user;
     } on FirebaseAuthException catch (e) {
       DeviceSession.instance.cancelFreshSignIn();
@@ -51,6 +65,36 @@ class AuthService {
     } on UnimplementedError {
       DeviceSession.instance.cancelFreshSignIn();
       throw AuthFailure('Google sign-in works in the Android app and on the web. Use email here.');
+    }
+  }
+
+  /// The web OAuth client of the Firebase project (google-services.json,
+  /// client_type 3): Google issues the ID token for it, and Firebase accepts it.
+  static const _googleServerClientId = '607547037853-tmbvh12u08rkfpl3nb305u5nbmramsdb.apps.googleusercontent.com';
+  static bool _googleReady = false;
+
+  /// Shows Android's Google account picker and returns the chosen account's
+  /// ID token, or null if the user backed out.
+  Future<String?> _nativeGoogleIdToken() async {
+    final google = GoogleSignIn.instance;
+    try {
+      if (!_googleReady) {
+        await google.initialize(serverClientId: _googleServerClientId);
+        _googleReady = true;
+      }
+      // Always offer the account picker, not the last account silently.
+      await google.signOut();
+      final account = await google.authenticate();
+      return account.authentication.idToken;
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled || e.code == GoogleSignInExceptionCode.interrupted) return null;
+      debugPrint('[auth] Google sign-in failed: ${e.code} ${e.description}');
+      throw AuthFailure(switch (e.code) {
+        GoogleSignInExceptionCode.clientConfigurationError || GoogleSignInExceptionCode.providerConfigurationError =>
+          'Google sign-in isn’t set up for this version of the app. Use email for now.',
+        GoogleSignInExceptionCode.uiUnavailable => 'Google sign-in couldn’t open on this phone. Use email for now.',
+        _ => 'Google sign-in didn’t finish. Check your internet connection and try again.',
+      });
     }
   }
 

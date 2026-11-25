@@ -44,10 +44,12 @@ dependencies:
   web: ^1.1.1
   dart_webrtc: ^1.8.2
   firebase_messaging: ^16.7.1
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.4
 
 # firebase_core_web 3.11.0 fails to compile for web (dart2js "isA isn't
 # defined for type Object") — pinned back one release until upstream fixes it.
@@ -124,3 +126,20 @@ flutter:
         - asset: assets/fonts/InstrumentSerif-400.ttf
         - asset: assets/fonts/InstrumentSerif-400Italic.ttf
           style: italic
+
+# App icon (the BoloAI logo). Regenerate with: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: assets/icon/icon.png
+  android: true
+  adaptive_icon_background: "#1F3595"
+  adaptive_icon_foreground: assets/icon/foreground.png
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: assets/icon/icon.png
+    background_color: "#1F3595"
+    theme_color: "#1F3595"
+  windows:
+    generate: true
+    image_path: assets/icon/icon.png

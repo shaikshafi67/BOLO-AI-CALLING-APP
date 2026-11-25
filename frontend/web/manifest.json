@@ -1,11 +1,11 @@
 {
-    "name": "boloai_app",
-    "short_name": "boloai_app",
+    "name": "BoloAI",
+    "short_name": "BoloAI",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#1F3595",
+    "theme_color": "#1F3595",
+    "description": "Video calls with live AI translation and captions.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
