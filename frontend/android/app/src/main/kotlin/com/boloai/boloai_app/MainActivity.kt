@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.cloudwebrtc.webrtc.FlutterWebRTCPlugin
 import com.cloudwebrtc.webrtc.audio.LocalAudioTrack
 import io.flutter.embedding.android.FlutterActivity
@@ -26,6 +27,10 @@ import java.nio.ByteOrder
 ///  - "boloai/audio" plays a translated sentence (MP3).
 /// It also creates the "calls" notification channel used by incoming-call pushes.
 class MainActivity : FlutterActivity() {
+    companion object {
+        private const val TAG = "BoloAI"
+    }
+
     private val main = Handler(Looper.getMainLooper())
     private var micSink: Pcm16kSink? = null
     private var micTrack: LocalAudioTrack? = null
@@ -54,17 +59,22 @@ class MainActivity : FlutterActivity() {
         MethodChannel(messenger, "boloai/audio").setMethodCallHandler { call, result ->
             when (call.method) {
                 "startMic" -> {
-                    val trackId = call.argument<String>("trackId")
-                    val track = trackId?.let { FlutterWebRTCPlugin.sharedSingleton?.getLocalTrack(it) } as? LocalAudioTrack
-                    if (track == null) {
-                        result.error("no_track", "Microphone track $trackId not found", null)
-                    } else {
-                        stopMic()
-                        val sink = Pcm16kSink { chunk -> main.post { pcmEvents?.success(chunk) } }
-                        track.addSink(sink)
-                        micTrack = track
-                        micSink = sink
-                        result.success(null)
+                    try {
+                        val trackId = call.argument<String>("trackId")
+                        val track = trackId?.let { FlutterWebRTCPlugin.sharedSingleton?.getLocalTrack(it) } as? LocalAudioTrack
+                        if (track == null) {
+                            result.error("no_track", "Microphone track $trackId not found", null)
+                        } else {
+                            stopMic()
+                            val sink = Pcm16kSink { chunk -> main.post { pcmEvents?.success(chunk) } }
+                            track.addSink(sink)
+                            micTrack = track
+                            micSink = sink
+                            result.success(null)
+                        }
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "startMic failed", e)
+                        result.error("start_failed", e.message, null)
                     }
                 }
                 "stopMic" -> {
@@ -73,7 +83,16 @@ class MainActivity : FlutterActivity() {
                 }
                 "playMp3" -> {
                     val bytes = call.argument<ByteArray>("bytes")
-                    if (bytes == null) result.success(null) else playMp3(bytes) { result.success(null) }
+                    if (bytes == null) {
+                        result.success(null)
+                    } else {
+                        try {
+                            playMp3(bytes) { result.success(null) }
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "playMp3 failed", e)
+                            result.success(null)
+                        }
+                    }
                 }
                 "stopPlayback" -> {
                     stopPlayback()
@@ -91,7 +110,11 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopMic() {
-        micSink?.let { micTrack?.removeSink(it) }
+        try {
+            micSink?.let { micTrack?.removeSink(it) }
+        } catch (e: Throwable) {
+            Log.e(TAG, "stopMic failed", e)
+        }
         micSink = null
         micTrack = null
     }
@@ -106,7 +129,10 @@ class MainActivity : FlutterActivity() {
             if (!finished) {
                 finished = true
                 players.remove(player)
-                player.release()
+                try {
+                    player.release()
+                } catch (_: Throwable) {
+                }
                 file.delete()
                 done()
             }
@@ -124,7 +150,8 @@ class MainActivity : FlutterActivity() {
             player.setOnPreparedListener { it.start() }
             players.add(player)
             player.prepareAsync()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            Log.e(TAG, "translated voice did not play", e)
             finish()
         }
     }
@@ -165,6 +192,7 @@ private class Pcm16kSink(private val onChunk: (ByteArray) -> Unit) : AudioTrackS
     private var pos = 0.0
     private var sum = 0.0
     private var count = 0
+    private var failed = false
 
     override fun onData(
         audioData: ByteBuffer,
@@ -174,6 +202,18 @@ private class Pcm16kSink(private val onChunk: (ByteArray) -> Unit) : AudioTrackS
         numberOfFrames: Int,
         absoluteCaptureTimestampMs: Long,
     ) {
+        if (failed) return
+        try {
+            convert(audioData, bitsPerSample, sampleRate, numberOfChannels)
+        } catch (e: Throwable) {
+            // Runs on WebRTC's audio thread, where an uncaught exception closes
+            // the app: stop translating this call instead.
+            failed = true
+            Log.e("BoloAI", "microphone capture for translation stopped", e)
+        }
+    }
+
+    private fun convert(audioData: ByteBuffer, bitsPerSample: Int, sampleRate: Int, numberOfChannels: Int) {
         if (bitsPerSample != 16 || sampleRate <= 0 || numberOfChannels <= 0) return
         val samples = audioData.duplicate().order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
         val step = sampleRate / 16000.0
